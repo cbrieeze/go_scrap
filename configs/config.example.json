@@ -1,0 +1,8 @@
+{
+  "mode": "dynamic",
+  "timeout_seconds": 60,
+  "wait_for": "body",
+  "headless": true,
+  "nav_selector": ".nav",
+  "content_selector": ".content"
+}

@@ -1,0 +1,10 @@
+{
+  "mode": "auto",
+  "url": "https://developers.greenhouse.io/",
+  "output_dir": "output/greenhouse",
+  "timeout_seconds": 60,
+  "nav_selector": "#sidebar, nav",
+  "content_selector": ".content, main",
+  "exclude_selector": "footer, .cookie-banner",
+  "user_agent": "go_scrap/1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "url": "https://api.freshservice.com/",
+  "mode": "dynamic",
+  "output_dir": "output/freshservice",
+  "timeout_seconds": 60,
+  "user_agent": "go_scrap/1.0",
+  "wait_for": "body",
+  "headless": true,
+  "nav_selector": ".nav",
+  "content_selector": ".content",
+  "nav_walk": true
+}

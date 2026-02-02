@@ -1,0 +1,21 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - staticcheck
+    - gosimple
+    - unused
+    - errcheck
+    - gosec
+    - bodyclose
+    - gocyclo
+    - misspell
+    - gofmt
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  gosec:
+    excludes:
+      - G304 # Expect file inclusion via variables (CLI tools)

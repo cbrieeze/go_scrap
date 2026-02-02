@@ -1,0 +1,11 @@
+{
+  "url": "https://example.com",
+  "mode": "auto",
+  "output_dir": "output/temp_test",
+  "timeout_seconds": 30,
+  "user_agent": "go_scrap/1.0",
+  "wait_for": "body",
+  "headless": true,
+  "nav_selector": "nav",
+  "content_selector": "main"
+}

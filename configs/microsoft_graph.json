@@ -1,0 +1,10 @@
+{
+  "mode": "auto",
+  "url": "https://learn.microsoft.com/graph/",
+  "output_dir": "output/microsoft_graph",
+  "timeout_seconds": 60,
+  "nav_selector": "nav[role='navigation']",
+  "content_selector": "main",
+  "exclude_selector": ".feedback-container, .page-actions, footer",
+  "user_agent": "go_scrap/1.0"
+}

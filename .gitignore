@@ -1,0 +1,46 @@
+# Go
+bin/
+obj/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Node
+node_modules/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Outputs
+output/
+
+# Logs
+*.log
+
+# Env
+.env
+
+# Go workspace
+/go.work
+/go.work.sum
+
+# Playwright
+playwright/.cache/
+
+# Codex/AI
+.codex/
+.claude/
+.gemini/

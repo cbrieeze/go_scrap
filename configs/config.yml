@@ -1,0 +1,80 @@
+# This is an example configuration file for go_scrap.
+# You can use this file to configure the scraping process without having to pass all the options as CLI flags.
+# To use this configuration, you can run go_scrap with the --config flag:
+# go_scrap --config config.yml
+
+# URL to scrape
+url: "https://example.com"
+
+# Fetch options
+fetch:
+  # User-agent to use for fetching
+  user_agent: "go_scrap/1.0"
+  # Retry mechanism for failed requests
+  retry:
+    # Number of retries
+    count: 3
+    # Delay between retries in seconds
+    delay: 5
+  # Caching options
+  cache:
+    # Enable or disable caching
+    enabled: true
+    # Cache directory
+    dir: ".cache"
+
+# Parse options
+parse:
+  # CSS selector for the main content
+  content_selector: "article"
+  # CSS selectors for elements to exclude from the content
+  exclude_selectors:
+    - ".ads"
+    - ".social-share"
+    - "nav"
+    - "footer"
+
+# Markdown conversion options
+markdown:
+  # Enable or disable converting tables
+  tables: true
+  # Enable or disable converting code blocks
+  code_blocks: true
+
+# Output options
+output:
+  # Output directory
+  dir: "output"
+  # Output format (e.g., markdown, jsonl)
+  format: "markdown"
+  # Whether to download assets (e.g., images)
+  download_assets: false
+
+# Crawl options
+crawl:
+  # Enable or disable crawling
+  enabled: false
+  # Maximum crawl depth
+  depth: 2
+  # Whether to follow sitemaps
+  sitemap: true
+  # Rate limiting options
+  rate_limit:
+    # Delay between requests in milliseconds
+    delay: 100
+    # Randomize delay
+    randomize: true
+  # Proxy options
+  proxy:
+    # Proxy URL
+    url: ""
+    # Proxy username
+    username: ""
+    # Proxy password
+    password: ""
+  # Authentication options
+  auth:
+    # Custom headers
+    headers: {}
+    # Cookies
+    cookies: {}

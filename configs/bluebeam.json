@@ -1,0 +1,10 @@
+{
+  "mode": "auto",
+  "url": "https://support.bluebeam.com/articles/revu-administration-guide/",
+  "output_dir": "output/bluebeam",
+  "timeout_seconds": 60,
+  "nav_selector": ".sidebar-nav",
+  "content_selector": "article, .post-content",
+  "exclude_selector": ".share-buttons, .related-posts",
+  "user_agent": "go_scrap/1.0"
+}
