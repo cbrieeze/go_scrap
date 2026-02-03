@@ -169,6 +169,30 @@ Outputs:
 - `menu.json` (if --nav-selector provided)
 - `sections/` (if --nav-selector provided)
 
+### Crawl mode outputs
+
+In crawl mode (`--crawl` or `--sitemap`), outputs are organized per-URL with a summary index:
+
+- `crawl-index.json` - Summary with per-page section counts and errors
+- `pages/<path>/` - Per-URL directories containing standard outputs
+
+The `crawl-index.json` includes:
+```json
+{
+  "started_at": "2024-01-01T10:00:00Z",
+  "completed_at": "2024-01-01T10:05:00Z",
+  "base_url": "https://docs.example.com",
+  "pages_crawled": 42,
+  "pages_failed": 2,
+  "total_sections": 156,
+  "pages": [
+    { "url": "...", "status": "success", "section_count": 5, "fetched_at": "..." },
+    { "url": "...", "status": "error", "error": "timeout", "fetched_at": "..." }
+  ],
+  "errors": ["..."]
+}
+```
+
 ### Chunking behavior
 
 When you set `--max-md-bytes`, `--max-chars`, or `--max-tokens`, the scraper splits outputs at **section boundaries**:
