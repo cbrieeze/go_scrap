@@ -65,6 +65,9 @@ Common flags:
 --dry-run                    # fetch/analyze only; write nothing
 --max-sections 25            # limit number of sections written (0 = all)
 --max-menu-items 50          # limit number of menu-based section files written (0 = all)
+--max-md-bytes 20000         # split section markdown files before this size (0 = no split)
+--max-chars 20000            # split section markdown files before this character count (0 = no split)
+--max-tokens 4000            # split section markdown files before this token estimate (0 = no split)
 --nav-selector ".nav"        # extract menu tree
 --content-selector ".content" # focus on content container
 --nav-walk                   # click each menu anchor and capture content
@@ -139,6 +142,9 @@ output/<host>/
   menu.json
   sections/
     introduction.md
+    api-index.md
+    api-index/
+      part-001.md
     tickets/
       create_ticket.md
 ```
@@ -160,7 +166,10 @@ Create a JSON file and pass it with `--config`.
   "content_selector": ".content",
   "exclude_selector": ".ads, .cookie-banner",
   "nav_walk": false,
-  "rate_limit_per_second": 2.5
+  "rate_limit_per_second": 2.5,
+  "max_markdown_bytes": 20000,
+  "max_chars": 20000,
+  "max_tokens": 4000
 }
 ```
 

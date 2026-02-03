@@ -18,6 +18,9 @@ type Config struct {
 	ExcludeSelector    string  `json:"exclude_selector"`
 	NavWalk            bool    `json:"nav_walk"`
 	RateLimitPerSecond float64 `json:"rate_limit_per_second"`
+	MaxMarkdownBytes   int     `json:"max_markdown_bytes"`
+	MaxChars           int     `json:"max_chars"`
+	MaxTokens          int     `json:"max_tokens"`
 }
 
 func Load(path string) (Config, error) {

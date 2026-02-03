@@ -66,6 +66,9 @@ type parsedFlags struct {
 	excludeSel         stringFlag
 	maxSections        int
 	maxMenuItems       int
+	maxMarkdownBytes   intFlag
+	maxChars           intFlag
+	maxTokens          intFlag
 	useCache           bool
 	downloadAssetsFlag bool
 }
@@ -98,6 +101,12 @@ func parseFlags(args []string) (parsedFlags, error) {
 	fs.Var(&parsed.excludeSel, "exclude-selector", "CSS selector to remove from HTML before processing")
 	fs.IntVar(&parsed.maxSections, "max-sections", 0, "Limit number of sections written (0 = all)")
 	fs.IntVar(&parsed.maxMenuItems, "max-menu-items", 0, "Limit number of menu-based section files written (0 = all)")
+	parsed.maxMarkdownBytes.Value = 0
+	fs.Var(&parsed.maxMarkdownBytes, "max-md-bytes", "Max bytes per section markdown file before splitting (0 = no split)")
+	parsed.maxChars.Value = 0
+	fs.Var(&parsed.maxChars, "max-chars", "Max characters per section markdown file before splitting (0 = no split)")
+	parsed.maxTokens.Value = 0
+	fs.Var(&parsed.maxTokens, "max-tokens", "Max tokens per section markdown file before splitting (0 = no split)")
 	fs.BoolVar(&parsed.useCache, "cache", false, "Use disk cache for HTML content")
 	fs.BoolVar(&parsed.downloadAssetsFlag, "download-assets", false, "Download referenced images to local assets directory")
 
@@ -128,6 +137,9 @@ func applyConfigDefaults(parsed *parsedFlags, cfg config.Config) {
 	applyNavWalk(parsed, cfg)
 	applyRateLimit(parsed, cfg)
 	applyExcludeSelector(parsed, cfg)
+	applyMaxMarkdownBytes(parsed, cfg)
+	applyMaxChars(parsed, cfg)
+	applyMaxTokens(parsed, cfg)
 }
 
 func applyURL(parsed *parsedFlags, cfg config.Config) {
@@ -202,6 +214,24 @@ func applyExcludeSelector(parsed *parsedFlags, cfg config.Config) {
 	}
 }
 
+func applyMaxMarkdownBytes(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.maxMarkdownBytes.WasSet && cfg.MaxMarkdownBytes > 0 {
+		parsed.maxMarkdownBytes.Value = cfg.MaxMarkdownBytes
+	}
+}
+
+func applyMaxChars(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.maxChars.WasSet && cfg.MaxChars > 0 {
+		parsed.maxChars.Value = cfg.MaxChars
+	}
+}
+
+func applyMaxTokens(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.maxTokens.WasSet && cfg.MaxTokens > 0 {
+		parsed.maxTokens.Value = cfg.MaxTokens
+	}
+}
+
 func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 	if parsed.urlStr == "" {
 		return app.Options{}, false, ExitError{Code: 2, Err: errors.New("--url is required")}
@@ -227,6 +257,9 @@ func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 		NavWalk:            parsed.navWalk,
 		MaxSections:        parsed.maxSections,
 		MaxMenuItems:       parsed.maxMenuItems,
+		MaxMarkdownBytes:   parsed.maxMarkdownBytes.Value,
+		MaxChars:           parsed.maxChars.Value,
+		MaxTokens:          parsed.maxTokens.Value,
 	}
 	return opts, false, nil
 }

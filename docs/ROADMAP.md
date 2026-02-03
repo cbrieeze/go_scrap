@@ -48,7 +48,7 @@ This document outlines the future development plans for `go_scrap`. The priority
 
 - [ ] **Crawl Engine Integration (Colly)**: Adopt `github.com/gocolly/colly` to handle the crawl lifecycle (queue, de-dupe, recursion).
   - Replaces manual fetch/loop logic.
-- [ ] **Politeness Configuration**: Implement `colly` LimitRules for rate limiting and enable `robots.txt` support.
+- [ ] **Politeness Configuration**: Implement `colly` LimitRules for rate limiting.
   - Depends on: Crawl Engine.
 - [ ] **Sitemap Ingestion** (library-backed): Allow passing a `sitemap.xml` URL to batch scrape all pages on a site. (e.g., `github.com/oxffaa/gopher-parse-sitemap` or `encoding/xml`)
   - Depends on: Crawl Engine.
@@ -69,7 +69,7 @@ This document outlines the future development plans for `go_scrap`. The priority
 - [ ] **Heading Normalization**: Normalize heading hierarchy.
 - [ ] **Boilerplate Stripping**: Strip boilerplate navigation/footers when possible.
 - [ ] **De-duplication**: De-duplicate repeating blocks across pages.
-- [ ] **Chunking Controls**: Support `--max-chars`/`--max-tokens` with smart sub-splitting by subheadings/paragraphs.
+- [x] **Chunking Controls**: Support `--max-chars`/`--max-tokens` with smart sub-splitting by subheadings/paragraphs.
 - [ ] **Pipeline Hooks**: Add a post-processing pipeline interface (validate, dedupe, enrich, export).
 - [ ] **Rich Output Formats** (library-backed): Support exporting to single-file HTML, PDF, or EPUB. (e.g., `github.com/go-shiori/go-epub`, or HTML→PDF via Playwright/Chromedp)
 - [ ] **Screenshot Capture** (library-backed): Optional screenshot capture per page. (Playwright)

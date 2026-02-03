@@ -7,7 +7,7 @@ obj/
 *.dylib
 *.test
 *.out
-.cache
+.cache/
 
 
 # Node
@@ -41,6 +41,7 @@ output/
 
 # Playwright
 playwright/.cache/
+.playwright/
 
 # Codex/AI
 .codex/

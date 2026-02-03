@@ -22,7 +22,10 @@ func TestLoadConfig(t *testing.T) {
   "content_selector": "main",
   "exclude_selector": ".ads",
   "nav_walk": true,
-  "rate_limit_per_second": 2.5
+  "rate_limit_per_second": 2.5,
+  "max_markdown_bytes": 2048,
+  "max_chars": 16000,
+  "max_tokens": 4000
 }`)
 
 	dir := t.TempDir()
@@ -50,6 +53,9 @@ func TestLoadConfig(t *testing.T) {
 		ExcludeSelector:    ".ads",
 		NavWalk:            true,
 		RateLimitPerSecond: 2.5,
+		MaxMarkdownBytes:   2048,
+		MaxChars:           16000,
+		MaxTokens:          4000,
 	}
 
 	if !reflect.DeepEqual(cfg, expected) {
@@ -72,6 +78,9 @@ func TestMarshalConfig(t *testing.T) {
 		ExcludeSelector:    ".ads",
 		NavWalk:            true,
 		RateLimitPerSecond: 1.2,
+		MaxMarkdownBytes:   1024,
+		MaxChars:           8000,
+		MaxTokens:          2000,
 	}
 
 	data, err := config.Marshal(cfg)

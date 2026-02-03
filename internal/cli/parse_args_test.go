@@ -21,7 +21,10 @@ func TestParseArgs_UsesConfigDefaults(t *testing.T) {
   "content_selector": ".content",
   "exclude_selector": ".ads",
   "nav_walk": true,
-  "rate_limit_per_second": 1.5
+  "rate_limit_per_second": 1.5,
+  "max_markdown_bytes": 4096,
+  "max_chars": 12000,
+  "max_tokens": 3000
 }`), 0600); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
@@ -44,6 +47,12 @@ func TestParseArgs_UsesConfigDefaults(t *testing.T) {
 	}
 	if !opts.NavWalk || opts.RateLimitPerSecond != 1.5 {
 		t.Fatalf("nav/rate not applied: %+v", opts)
+	}
+	if opts.MaxMarkdownBytes != 4096 {
+		t.Fatalf("max markdown bytes not applied: %+v", opts)
+	}
+	if opts.MaxChars != 12000 || opts.MaxTokens != 3000 {
+		t.Fatalf("max chars/tokens not applied: %+v", opts)
 	}
 }
 

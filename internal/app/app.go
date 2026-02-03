@@ -44,6 +44,9 @@ type Options struct {
 	NavWalk            bool
 	MaxSections        int
 	MaxMenuItems       int
+	MaxMarkdownBytes   int
+	MaxChars           int
+	MaxTokens          int
 }
 
 type menuItem struct {
@@ -126,7 +129,7 @@ func printSummaryIfNeeded(opts Options, sourceInfo string, doc *parse.Document, 
 }
 
 func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, rep report.Report, conv *markdown.Converter) error {
-	md, err := buildMarkdown(conv, doc.Sections)
+	md, sectionMarkdowns, err := buildMarkdown(conv, doc.Sections)
 	if err != nil {
 		return err
 	}
@@ -135,7 +138,22 @@ func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, 
 		return errors.New("completeness checks failed (use --strict=false to allow)")
 	}
 
-	mdPath, jsonPath, err := output.WriteAll(doc, rep, md, output.WriteOptions{OutputDir: opts.OutputDir})
+	jsonPath, err := output.WriteJSON(doc, rep, output.WriteOptions{OutputDir: opts.OutputDir})
+	if err != nil {
+		return err
+	}
+
+	var mdPath string
+	limits := output.ChunkLimits{
+		MaxBytes:  opts.MaxMarkdownBytes,
+		MaxChars:  opts.MaxChars,
+		MaxTokens: opts.MaxTokens,
+	}
+	if limits.Enabled() {
+		mdPath, err = output.WriteMarkdownParts(opts.OutputDir, "content.md", sectionMarkdowns, limits)
+	} else {
+		mdPath, err = output.WriteMarkdown(opts.OutputDir, "content.md", md)
+	}
 	if err != nil {
 		return err
 	}
@@ -312,7 +330,7 @@ func buildSectionFromAnchor(item menuItem, htmlForAnchor string, anchors []strin
 	if err != nil {
 		return parse.Section{}, false
 	}
-	contentDoc := prepareContentDoc(anchorDoc, opts)
+	contentDoc := prepareContentDoc(anchorDoc, opts, item.Anchor)
 
 	contentHTML := documentOuterHTML(contentDoc)
 	contentText := strings.TrimSpace(contentDoc.Text())
@@ -333,20 +351,95 @@ func buildSectionFromAnchor(item menuItem, htmlForAnchor string, anchors []strin
 	return section, true
 }
 
-func prepareContentDoc(anchorDoc *goquery.Document, opts Options) *goquery.Document {
+func prepareContentDoc(anchorDoc *goquery.Document, opts Options, anchor string) *goquery.Document {
 	if strings.TrimSpace(opts.ExcludeSelector) != "" {
 		_ = parse.RemoveSelectors(anchorDoc, opts.ExcludeSelector)
 	}
 	if opts.DownloadAssets && !opts.DryRun {
 		_ = output.Download(anchorDoc, opts.URL, opts.OutputDir, opts.UserAgent)
 	}
+	baseDoc := anchorDoc
 	if strings.TrimSpace(opts.ContentSelector) != "" {
 		extracted, err := parse.ExtractBySelector(anchorDoc, opts.ContentSelector)
 		if err == nil && extracted != nil {
-			return extracted
+			baseDoc = extracted
 		}
 	}
-	return anchorDoc
+	if strings.TrimSpace(anchor) != "" {
+		if sliced, ok := sliceByAnchor(baseDoc, anchor); ok {
+			return sliced
+		}
+		if baseDoc != anchorDoc {
+			if sliced, ok := sliceByAnchor(anchorDoc, anchor); ok {
+				return sliced
+			}
+		}
+	}
+	return baseDoc
+}
+
+func sliceByAnchor(doc *goquery.Document, anchor string) (*goquery.Document, bool) {
+	if doc == nil || doc.Selection == nil {
+		return nil, false
+	}
+	anchor = strings.TrimSpace(anchor)
+	if anchor == "" {
+		return nil, false
+	}
+	selector := fmt.Sprintf(`[id="%s"]`, escapeCSSAttrValue(anchor))
+	sel := doc.Find(selector).First()
+	if sel.Length() == 0 {
+		return nil, false
+	}
+
+	tag := strings.ToLower(goquery.NodeName(sel))
+	if isHeadingTag(tag) {
+		siblings := sel.NextUntil("h1, h2, h3, h4, h5, h6")
+		html := selectionOuterHTML(siblings)
+		if strings.TrimSpace(html) == "" {
+			return nil, false
+		}
+		wrapped := "<div>" + html + "</div>"
+		sliced, err := parse.NewDocument(wrapped)
+		if err != nil {
+			return nil, false
+		}
+		return sliced, true
+	}
+
+	clone := sel.Clone()
+	clone.Find("h1, h2, h3, h4, h5, h6").First().Remove()
+	node := clone.Get(0)
+	if node == nil {
+		return nil, false
+	}
+	return goquery.NewDocumentFromNode(node), true
+}
+
+func selectionOuterHTML(sel *goquery.Selection) string {
+	if sel == nil {
+		return ""
+	}
+	var htmlBuf strings.Builder
+	sel.Each(func(_ int, s *goquery.Selection) {
+		if h, err := goquery.OuterHtml(s); err == nil {
+			htmlBuf.WriteString(h)
+		}
+	})
+	return htmlBuf.String()
+}
+
+func escapeCSSAttrValue(value string) string {
+	return strings.ReplaceAll(value, `"`, `\"`)
+}
+
+func isHeadingTag(tag string) bool {
+	switch strings.ToLower(tag) {
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		return true
+	default:
+		return false
+	}
 }
 
 func flattenMenu(nodes []menu.Node) []menuItem {
@@ -434,17 +527,22 @@ func trimSections(doc *parse.Document, max int) {
 	}
 }
 
-func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, error) {
+func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, []string, error) {
 	var mdBuilder strings.Builder
+	parts := make([]string, 0, len(sections))
 	for _, section := range sections {
 		md, err := conv.SectionToMarkdown(section.HeadingText, section.HeadingLevel, section.ContentHTML)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		mdBuilder.WriteString(md)
 		mdBuilder.WriteString("\n")
+		if !strings.HasSuffix(md, "\n") {
+			md += "\n"
+		}
+		parts = append(parts, md)
 	}
-	return mdBuilder.String(), nil
+	return mdBuilder.String(), parts, nil
 }
 
 func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, conv *markdown.Converter) error {
@@ -482,7 +580,12 @@ func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Docume
 		}
 	}
 
-	if err := output.WriteSectionFiles(opts.OutputDir, nodes, mdByID, opts.MaxMenuItems); err != nil {
+	limits := output.ChunkLimits{
+		MaxBytes:  opts.MaxMarkdownBytes,
+		MaxChars:  opts.MaxChars,
+		MaxTokens: opts.MaxTokens,
+	}
+	if err := output.WriteSectionFiles(opts.OutputDir, nodes, mdByID, opts.MaxMenuItems, limits); err != nil {
 		return fmt.Errorf("section write failed: %w", err)
 	}
 	return nil
