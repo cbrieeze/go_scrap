@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -78,30 +77,29 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func runSingle(ctx context.Context, opts Options) error {
-	baseDoc, result, err := prepareBaseDocument(ctx, opts)
+	pipeline := newPipeline()
+	baseDoc, fetchResult, err := prepareBaseDocument(ctx, pipeline, opts)
 	if err != nil {
 		return err
 	}
 
-	doc, err := buildDocument(ctx, opts, baseDoc)
+	analysis, err := pipeline.analyze(ctx, opts, baseDoc, true)
 	if err != nil {
 		return err
 	}
+	pipeline.summarize(opts, fetchResult.SourceInfo, analysis)
 
-	rep := report.Analyze(doc)
-	printSummaryIfNeeded(opts, result.SourceInfo, doc, rep)
-
-	if !confirmWriteOutputs(opts) {
+	if !pipeline.shouldWrite(opts) {
 		return nil
 	}
 
-	trimSections(doc, opts.MaxSections)
+	analysis.Trim(opts.MaxSections)
 
-	conv := markdown.NewConverter()
-	return writeOutputs(opts, baseDoc, doc, rep, conv)
+	return pipeline.writeOutputs(opts, baseDoc, analysis)
 }
 
 func runCrawl(ctx context.Context, opts Options) error {
+	pipeline := newPipeline()
 	c, baseURL, err := initCrawler(ctx, opts)
 	if err != nil {
 		return err
@@ -120,7 +118,7 @@ func runCrawl(ctx context.Context, opts Options) error {
 		fmt.Printf("Crawl complete: %d pages crawled, %d failed\n", stats.PagesCrawled, stats.PagesFailed)
 	}
 
-	if !confirmWriteOutputs(opts) {
+	if !pipeline.shouldWrite(opts) {
 		return nil
 	}
 
@@ -215,85 +213,35 @@ func addSitemapURLs(ctx context.Context, c *crawler.Crawler, opts Options) error
 }
 
 func processCrawlResults(ctx context.Context, opts Options, results map[string]*crawler.Result, stats crawler.Stats) error {
-	conv := markdown.NewConverter()
+	pipeline := newPipeline()
 	pagesDir := filepath.Join(opts.OutputDir, "pages")
-	sectionCounts := make(map[string]int)
+	pageSections := []output.PageSectionCount{}
 
 	for pageURL, result := range results {
-		if result.Error != nil || result.HTML == "" {
+		summary := pipeline.processCrawlPage(ctx, opts, pageURL, result, pagesDir)
+		if summary.Processed {
+			pageSections = append(pageSections, output.PageSectionCount{
+				URL:      pageURL,
+				Sections: summary.Sections,
+			})
+			if !opts.Stdout {
+				fmt.Printf("Wrote: %s (%d sections)\n", summary.OutputDir, summary.Sections)
+			}
 			continue
 		}
-
-		// Create per-URL output directory
-		pageDir, err := urlToOutputDir(pageURL, pagesDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping %s: %v\n", pageURL, err)
+		if summary.Skipped {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s: %s\n", pageURL, summary.SkipReason)
 			continue
 		}
-
-		// Process this page
-		pageOpts := opts
-		pageOpts.URL = pageURL
-		pageOpts.OutputDir = pageDir
-
-		baseDoc, err := parse.NewDocument(result.HTML)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", pageURL, err)
-			continue
-		}
-
-		applyExclusions(baseDoc, opts.ExcludeSelector)
-
-		doc, err := parseDocuments(baseDoc, opts.ContentSelector)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse sections for %s: %v\n", pageURL, err)
-			continue
-		}
-
-		// Track section count for index
-		sectionCounts[pageURL] = len(doc.Sections)
-
-		rep := report.Analyze(doc)
-		trimSections(doc, opts.MaxSections)
-
-		if err := writeOutputs(pageOpts, baseDoc, doc, rep, conv); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to write outputs for %s: %v\n", pageURL, err)
-			continue
-		}
-
-		if !opts.Stdout {
-			fmt.Printf("Wrote: %s (%d sections)\n", pageDir, len(doc.Sections))
+		if summary.ProcessError != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to process %s: %v\n", pageURL, summary.ProcessError)
 		}
 	}
 
 	// Build and write crawl index
 	baseURL, _ := determineBaseURL(opts)
-	index := crawler.BuildIndex(results, stats, baseURL, sectionCounts)
-	if err := writeCrawlIndex(opts.OutputDir, index, opts.Stdout); err != nil {
+	if err := output.WriteCrawlIndexFromPages(opts.OutputDir, results, stats, baseURL, pageSections, opts.Stdout); err != nil {
 		return fmt.Errorf("write crawl index: %w", err)
-	}
-
-	return nil
-}
-
-func writeCrawlIndex(outputDir string, index crawler.CrawlIndex, silent bool) error {
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return err
-	}
-
-	indexPath := filepath.Join(outputDir, "crawl-index.json")
-	data, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(indexPath, data, 0600); err != nil {
-		return err
-	}
-
-	if !silent {
-		fmt.Printf("Wrote crawl index: %s (%d pages, %d total sections)\n",
-			indexPath, index.PagesCrawled, index.TotalSections)
 	}
 
 	return nil
@@ -336,23 +284,15 @@ func sanitizePathComponent(s string) string {
 	return s
 }
 
-func prepareBaseDocument(ctx context.Context, opts Options) (*goquery.Document, fetch.Result, error) {
+func prepareBaseDocument(ctx context.Context, pipeline *pipeline, opts Options) (*goquery.Document, fetch.Result, error) {
 	result, err := fetchResult(ctx, opts)
 	if err != nil {
 		return nil, fetch.Result{}, err
 	}
 
-	baseDoc, err := parse.NewDocument(result.HTML)
+	baseDoc, err := pipeline.prepareDocument(ctx, opts, result.HTML)
 	if err != nil {
 		return nil, fetch.Result{}, err
-	}
-
-	applyExclusions(baseDoc, opts.ExcludeSelector)
-
-	if opts.DownloadAssets && !opts.DryRun {
-		if err := output.Download(baseDoc, opts.URL, opts.OutputDir, opts.UserAgent); err != nil && !opts.Stdout {
-			fmt.Fprintf(os.Stderr, "Warning: asset processing failed: %v\n", err)
-		}
 	}
 
 	return baseDoc, result, nil
@@ -372,25 +312,24 @@ func printSummaryIfNeeded(opts Options, sourceInfo string, doc *parse.Document, 
 	printSummary(sourceInfo, doc, rep)
 }
 
-func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, rep report.Report, conv *markdown.Converter) error {
-	md, sectionMarkdowns, err := buildMarkdown(conv, doc.Sections)
-	if err != nil {
-		return err
-	}
-
-	if opts.Strict && reportHasIssues(rep) {
+func writeOutputsWithMarkdown(opts Options, baseDoc *goquery.Document, result analysisResult, md string, sectionMarkdowns []sectionMarkdown) error {
+	if opts.Strict && reportHasIssues(result.Rep) {
 		return errors.New("completeness checks failed (use --strict=false to allow)")
 	}
 
-	jsonPath, err := output.WriteJSON(doc, rep, output.WriteOptions{OutputDir: opts.OutputDir})
+	jsonPath, err := output.WriteJSON(result.Doc, result.Rep, output.WriteOptions{OutputDir: opts.OutputDir})
 	if err != nil {
 		return err
 	}
 
 	var mdPath string
 	limits := chunkLimits(opts)
+	contentParts := make([]string, 0, len(sectionMarkdowns))
+	for _, sm := range sectionMarkdowns {
+		contentParts = append(contentParts, sm.Markdown)
+	}
 	if limits.Enabled() {
-		mdPath, err = output.WriteMarkdownParts(opts.OutputDir, "content.md", sectionMarkdowns, limits)
+		mdPath, err = output.WriteMarkdownParts(opts.OutputDir, "content.md", contentParts, limits)
 	} else {
 		mdPath, err = output.WriteMarkdown(opts.OutputDir, "content.md", md)
 	}
@@ -405,12 +344,12 @@ func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, 
 		fmt.Printf("Wrote json: %s\n", jsonPath)
 	}
 
-	if err := writeMenuOutputs(opts, baseDoc, doc, conv); err != nil {
+	if err := writeMenuOutputs(opts, baseDoc, result.Doc, sectionMarkdowns); err != nil {
 		return err
 	}
 
 	if !opts.Stdout {
-		if indexPath, err := output.WriteIndex(opts.OutputDir, opts.URL, doc.Sections); err == nil {
+		if indexPath, err := output.WriteIndex(opts.OutputDir, opts.URL, result.Doc.Sections); err == nil {
 			fmt.Printf("Wrote index: %s\n", indexPath)
 		}
 	}
@@ -788,24 +727,15 @@ func applyExclusions(doc *goquery.Document, selector string) {
 	_ = parse.RemoveSelectors(doc, selector)
 }
 
-func confirmWriteOutputs(opts Options) bool {
-	if opts.DryRun {
-		fmt.Println("\nDry run complete (no files written).")
-		return false
-	}
-	if opts.Yes {
-		return true
-	}
-	if confirm("Continue and generate outputs? [y/N]: ") {
-		return true
-	}
-	fmt.Println("Aborted.")
-	return false
+type sectionMarkdown struct {
+	HeadingID  string
+	ContentIDs []string
+	Markdown   string
 }
 
-func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, []string, error) {
+func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, []sectionMarkdown, error) {
 	var mdBuilder strings.Builder
-	parts := make([]string, 0, len(sections))
+	parts := make([]sectionMarkdown, 0, len(sections))
 	for _, section := range sections {
 		md, err := conv.SectionToMarkdown(section.HeadingText, section.HeadingLevel, section.ContentHTML)
 		if err != nil {
@@ -816,12 +746,16 @@ func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, 
 		if !strings.HasSuffix(md, "\n") {
 			md += "\n"
 		}
-		parts = append(parts, md)
+		parts = append(parts, sectionMarkdown{
+			HeadingID:  section.HeadingID,
+			ContentIDs: section.ContentIDs,
+			Markdown:   md,
+		})
 	}
 	return mdBuilder.String(), parts, nil
 }
 
-func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, conv *markdown.Converter) error {
+func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, sections []sectionMarkdown) error {
 	if strings.TrimSpace(opts.NavSelector) == "" {
 		return nil
 	}
@@ -834,13 +768,8 @@ func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Docume
 	}
 
 	mdByID := map[string]string{}
-	for _, section := range doc.Sections {
-		md, err := conv.SectionToMarkdown(section.HeadingText, section.HeadingLevel, section.ContentHTML)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to convert section %q: %v\n", section.HeadingText, err)
-			continue
-		}
-
+	for _, section := range sections {
+		md := section.Markdown
 		if opts.DownloadAssets {
 			md = strings.ReplaceAll(md, "(assets/", "(../assets/")
 			md = strings.ReplaceAll(md, "\"assets/", "\"../assets/")

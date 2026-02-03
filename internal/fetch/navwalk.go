@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -121,19 +122,8 @@ func normalizeAnchorOptions(opts *Options) error {
 }
 
 func openPage(opts Options) (playwright.Page, func(), error) {
-	if err := playwright.Install(&playwright.RunOptions{}); err != nil {
-		return nil, func() {}, fmt.Errorf("install playwright: %w", err)
-	}
-	pw, err := playwright.Run()
+	browser, err := ensureBrowser(opts)
 	if err != nil {
-		return nil, func() {}, err
-	}
-
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(opts.Headless),
-	})
-	if err != nil {
-		_ = pw.Stop()
 		return nil, func() {}, err
 	}
 
@@ -141,17 +131,48 @@ func openPage(opts Options) (playwright.Page, func(), error) {
 		UserAgent: playwright.String(opts.UserAgent),
 	})
 	if err != nil {
-		_ = browser.Close()
-		_ = pw.Stop()
 		return nil, func() {}, err
 	}
 
 	closeAll := func() {
 		_ = page.Close()
-		_ = browser.Close()
-		_ = pw.Stop()
 	}
 	return page, closeAll, nil
+}
+
+var browserManager struct {
+	mu      sync.Mutex
+	pw      *playwright.Playwright
+	browser playwright.Browser
+}
+
+func ensureBrowser(opts Options) (playwright.Browser, error) {
+	browserManager.mu.Lock()
+	defer browserManager.mu.Unlock()
+
+	if browserManager.browser != nil {
+		return browserManager.browser, nil
+	}
+
+	if err := playwright.Install(&playwright.RunOptions{}); err != nil {
+		return nil, fmt.Errorf("install playwright: %w", err)
+	}
+	pw, err := playwright.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(opts.Headless),
+	})
+	if err != nil {
+		_ = pw.Stop()
+		return nil, err
+	}
+
+	browserManager.pw = pw
+	browserManager.browser = browser
+	return browser, nil
 }
 
 func gotoAndWait(page navPage, url string, opts Options) error {
