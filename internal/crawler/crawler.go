@@ -39,6 +39,28 @@ type Stats struct {
 	Errors       []string  `json:"errors,omitempty"`
 }
 
+// PageEntry represents a single crawled page in the index.
+type PageEntry struct {
+	URL           string    `json:"url"`
+	Status        string    `json:"status"` // "success", "error"
+	SectionCount  int       `json:"section_count,omitempty"`
+	FetchedAt     time.Time `json:"fetched_at"`
+	Error         string    `json:"error,omitempty"`
+	ContentLength int       `json:"content_length,omitempty"`
+}
+
+// CrawlIndex is a comprehensive summary of a crawl operation.
+type CrawlIndex struct {
+	StartedAt     time.Time   `json:"started_at"`
+	CompletedAt   time.Time   `json:"completed_at"`
+	BaseURL       string      `json:"base_url"`
+	PagesCrawled  int         `json:"pages_crawled"`
+	PagesFailed   int         `json:"pages_failed"`
+	TotalSections int         `json:"total_sections"`
+	Pages         []PageEntry `json:"pages"`
+	Errors        []string    `json:"errors,omitempty"`
+}
+
 type Crawler struct {
 	collector *colly.Collector
 	opts      Options
@@ -252,4 +274,54 @@ func (c *Crawler) AddURLs(urls []string) error {
 		}
 	}
 	return nil
+}
+
+// BuildIndex creates a CrawlIndex from the crawler results.
+// sectionCounts is a map from URL to section count (provided by caller after parsing).
+func BuildIndex(results map[string]*Result, stats Stats, baseURL string, sectionCounts map[string]int) CrawlIndex {
+	index := CrawlIndex{
+		StartedAt:    stats.StartedAt,
+		CompletedAt:  stats.CompletedAt,
+		BaseURL:      baseURL,
+		PagesCrawled: stats.PagesCrawled,
+		PagesFailed:  stats.PagesFailed,
+		Pages:        make([]PageEntry, 0, len(results)),
+		Errors:       stats.Errors,
+	}
+
+	for url, result := range results {
+		entry := PageEntry{
+			URL:       url,
+			FetchedAt: result.FetchedAt,
+		}
+
+		if result.Error != nil {
+			entry.Status = "error"
+			entry.Error = result.Error.Error()
+		} else {
+			entry.Status = "success"
+			entry.ContentLength = len(result.HTML)
+			if count, ok := sectionCounts[url]; ok {
+				entry.SectionCount = count
+				index.TotalSections += count
+			}
+		}
+
+		index.Pages = append(index.Pages, entry)
+	}
+
+	// Sort pages by URL for consistent output
+	sortPageEntries(index.Pages)
+
+	return index
+}
+
+func sortPageEntries(pages []PageEntry) {
+	for i := 0; i < len(pages)-1; i++ {
+		for j := i + 1; j < len(pages); j++ {
+			if pages[i].URL > pages[j].URL {
+				pages[i], pages[j] = pages[j], pages[i]
+			}
+		}
+	}
 }

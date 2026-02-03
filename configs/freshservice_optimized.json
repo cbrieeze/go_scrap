@@ -1,0 +1,17 @@
+{
+  "url": "https://api.freshservice.com/",
+  "mode": "dynamic",
+  "output_dir": "output/freshservice_optimized",
+  "timeout_seconds": 60,
+  "user_agent": "go_scrap/1.0",
+  "wait_for": "body",
+  "headless": true,
+  "nav_selector": ".nav",
+  "content_selector": ".content",
+  "exclude_selector": ".sidebar, .ads, .cookie-banner, .footer, script, style",
+  "nav_walk": true,
+  "rate_limit_per_second": 2.5,
+  "max_markdown_bytes": 8000,
+  "max_chars": 6000,
+  "max_tokens": 2000
+}

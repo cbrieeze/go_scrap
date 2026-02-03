@@ -175,3 +175,108 @@ func TestCrawl_RespectsMaxPages(t *testing.T) {
 		t.Errorf("expected at most 3 pages crawled, got %d", stats.PagesCrawled)
 	}
 }
+
+func TestBuildIndex_Basic(t *testing.T) {
+	now := time.Now()
+	results := map[string]*crawler.Result{
+		"https://example.com/":      {URL: "https://example.com/", HTML: "<html>page1</html>", FetchedAt: now},
+		"https://example.com/page2": {URL: "https://example.com/page2", HTML: "<html>page2</html>", FetchedAt: now},
+	}
+	stats := crawler.Stats{
+		StartedAt:    now.Add(-time.Minute),
+		CompletedAt:  now,
+		PagesCrawled: 2,
+		PagesFailed:  0,
+	}
+	sectionCounts := map[string]int{
+		"https://example.com/":      3,
+		"https://example.com/page2": 5,
+	}
+
+	index := crawler.BuildIndex(results, stats, "https://example.com", sectionCounts)
+
+	if index.PagesCrawled != 2 {
+		t.Errorf("expected 2 pages crawled, got %d", index.PagesCrawled)
+	}
+	if index.TotalSections != 8 {
+		t.Errorf("expected 8 total sections, got %d", index.TotalSections)
+	}
+	if len(index.Pages) != 2 {
+		t.Errorf("expected 2 page entries, got %d", len(index.Pages))
+	}
+	if index.BaseURL != "https://example.com" {
+		t.Errorf("expected base URL 'https://example.com', got %q", index.BaseURL)
+	}
+}
+
+func TestBuildIndex_WithErrors(t *testing.T) {
+	now := time.Now()
+	results := map[string]*crawler.Result{
+		"https://example.com/":       {URL: "https://example.com/", HTML: "<html>ok</html>", FetchedAt: now},
+		"https://example.com/broken": {URL: "https://example.com/broken", Error: http.ErrServerClosed, FetchedAt: now},
+	}
+	stats := crawler.Stats{
+		StartedAt:    now.Add(-time.Minute),
+		CompletedAt:  now,
+		PagesCrawled: 1,
+		PagesFailed:  1,
+		Errors:       []string{"https://example.com/broken: server closed"},
+	}
+	sectionCounts := map[string]int{
+		"https://example.com/": 2,
+	}
+
+	index := crawler.BuildIndex(results, stats, "https://example.com", sectionCounts)
+
+	if index.PagesFailed != 1 {
+		t.Errorf("expected 1 page failed, got %d", index.PagesFailed)
+	}
+	if index.TotalSections != 2 {
+		t.Errorf("expected 2 total sections (only from successful page), got %d", index.TotalSections)
+	}
+
+	// Check that error page has correct status
+	var errorPage *crawler.PageEntry
+	for i := range index.Pages {
+		if index.Pages[i].URL == "https://example.com/broken" {
+			errorPage = &index.Pages[i]
+			break
+		}
+	}
+	if errorPage == nil {
+		t.Fatal("expected to find error page in index")
+	}
+	if errorPage.Status != "error" {
+		t.Errorf("expected status 'error', got %q", errorPage.Status)
+	}
+	if errorPage.Error == "" {
+		t.Error("expected error message to be set")
+	}
+}
+
+func TestBuildIndex_SortedByURL(t *testing.T) {
+	now := time.Now()
+	results := map[string]*crawler.Result{
+		"https://example.com/z": {URL: "https://example.com/z", HTML: "<html>z</html>", FetchedAt: now},
+		"https://example.com/a": {URL: "https://example.com/a", HTML: "<html>a</html>", FetchedAt: now},
+		"https://example.com/m": {URL: "https://example.com/m", HTML: "<html>m</html>", FetchedAt: now},
+	}
+	stats := crawler.Stats{PagesCrawled: 3}
+
+	index := crawler.BuildIndex(results, stats, "https://example.com", nil)
+
+	if len(index.Pages) != 3 {
+		t.Fatalf("expected 3 pages, got %d", len(index.Pages))
+	}
+
+	// Verify sorted order
+	if index.Pages[0].URL != "https://example.com/a" {
+		t.Errorf("expected first page to be /a, got %s", index.Pages[0].URL)
+	}
+	if index.Pages[1].URL != "https://example.com/m" {
+		t.Errorf("expected second page to be /m, got %s", index.Pages[1].URL)
+	}
+	if index.Pages[2].URL != "https://example.com/z" {
+		t.Errorf("expected third page to be /z, got %s", index.Pages[2].URL)
+	}
+}
