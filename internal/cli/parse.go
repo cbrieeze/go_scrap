@@ -71,6 +71,12 @@ type parsedFlags struct {
 	maxTokens          intFlag
 	useCache           bool
 	downloadAssetsFlag bool
+	// Crawl mode flags
+	crawl       bool
+	sitemapURL  string
+	maxPages    intFlag
+	crawlDepth  intFlag
+	crawlFilter stringFlag
 }
 
 func parseFlags(args []string) (parsedFlags, error) {
@@ -110,6 +116,15 @@ func parseFlags(args []string) (parsedFlags, error) {
 	fs.BoolVar(&parsed.useCache, "cache", false, "Use disk cache for HTML content")
 	fs.BoolVar(&parsed.downloadAssetsFlag, "download-assets", false, "Download referenced images to local assets directory")
 
+	// Crawl mode flags
+	fs.BoolVar(&parsed.crawl, "crawl", false, "Enable multi-page crawl mode")
+	fs.StringVar(&parsed.sitemapURL, "sitemap", "", "Sitemap URL to crawl (enables crawl mode)")
+	parsed.maxPages.Value = 100
+	fs.Var(&parsed.maxPages, "max-pages", "Maximum pages to crawl (default: 100)")
+	parsed.crawlDepth.Value = 2
+	fs.Var(&parsed.crawlDepth, "crawl-depth", "Max link depth from start URL (default: 2)")
+	fs.Var(&parsed.crawlFilter, "crawl-filter", "Regex to filter URLs during crawl")
+
 	if err := fs.Parse(args); err != nil {
 		return parsed, err
 	}
@@ -140,6 +155,11 @@ func applyConfigDefaults(parsed *parsedFlags, cfg config.Config) {
 	applyMaxMarkdownBytes(parsed, cfg)
 	applyMaxChars(parsed, cfg)
 	applyMaxTokens(parsed, cfg)
+	applyCrawl(parsed, cfg)
+	applySitemap(parsed, cfg)
+	applyMaxPages(parsed, cfg)
+	applyCrawlDepth(parsed, cfg)
+	applyCrawlFilter(parsed, cfg)
 }
 
 func applyURL(parsed *parsedFlags, cfg config.Config) {
@@ -232,10 +252,45 @@ func applyMaxTokens(parsed *parsedFlags, cfg config.Config) {
 	}
 }
 
-func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
-	if parsed.urlStr == "" {
-		return app.Options{}, false, ExitError{Code: 2, Err: errors.New("--url is required")}
+func applyCrawl(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.crawl && cfg.Crawl {
+		parsed.crawl = true
 	}
+}
+
+func applySitemap(parsed *parsedFlags, cfg config.Config) {
+	if parsed.sitemapURL == "" && cfg.SitemapURL != "" {
+		parsed.sitemapURL = cfg.SitemapURL
+	}
+}
+
+func applyMaxPages(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.maxPages.WasSet && cfg.MaxPages > 0 {
+		parsed.maxPages.Value = cfg.MaxPages
+	}
+}
+
+func applyCrawlDepth(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.crawlDepth.WasSet && cfg.CrawlDepth > 0 {
+		parsed.crawlDepth.Value = cfg.CrawlDepth
+	}
+}
+
+func applyCrawlFilter(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.crawlFilter.WasSet && cfg.CrawlFilter != "" {
+		parsed.crawlFilter.Value = cfg.CrawlFilter
+	}
+}
+
+func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
+	// --sitemap implies --crawl
+	crawl := parsed.crawl || parsed.sitemapURL != ""
+
+	// URL is required unless sitemap is provided
+	if parsed.urlStr == "" && parsed.sitemapURL == "" {
+		return app.Options{}, false, ExitError{Code: 2, Err: errors.New("--url or --sitemap is required")}
+	}
+
 	opts := app.Options{
 		URL:                parsed.urlStr,
 		Mode:               fetch.Mode(strings.ToLower(strings.TrimSpace(parsed.modeStr.Value))),
@@ -260,6 +315,11 @@ func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 		MaxMarkdownBytes:   parsed.maxMarkdownBytes.Value,
 		MaxChars:           parsed.maxChars.Value,
 		MaxTokens:          parsed.maxTokens.Value,
+		Crawl:              crawl,
+		SitemapURL:         parsed.sitemapURL,
+		MaxPages:           parsed.maxPages.Value,
+		CrawlDepth:         parsed.crawlDepth.Value,
+		CrawlFilter:        parsed.crawlFilter.Value,
 	}
 	return opts, false, nil
 }

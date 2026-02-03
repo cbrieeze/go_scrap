@@ -21,6 +21,12 @@ type Config struct {
 	MaxMarkdownBytes   int     `json:"max_markdown_bytes"`
 	MaxChars           int     `json:"max_chars"`
 	MaxTokens          int     `json:"max_tokens"`
+	// Crawl mode settings
+	Crawl       bool   `json:"crawl"`
+	SitemapURL  string `json:"sitemap_url"`
+	MaxPages    int    `json:"max_pages"`
+	CrawlDepth  int    `json:"crawl_depth"`
+	CrawlFilter string `json:"crawl_filter"`
 }
 
 func Load(path string) (Config, error) {

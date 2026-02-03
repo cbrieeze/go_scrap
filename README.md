@@ -1,14 +1,20 @@
 # go_scrap
 
-Purpose: a CLI scraper that pulls documentation-like sites into AI-friendly Markdown + JSON, while preserving section structure and menu-based navigation.
+Purpose: a CLI scraper that pulls documentation-like sites into AI-friendly Markdown + JSON, while preserving section structure and menu-based navigation. Supports single-page and multi-page crawling with sitemap support.
 
 CLI web scraper in Go that:
-- Fetches full HTML once (static/dynamic/auto)
-- Enumerates heading IDs and `href="#..."` anchors
-- Slices content into sections (heading + content until next heading)
-- Converts each section to Markdown (with table helper)
-- Exports Markdown + JSON and runs completeness checks
-- Optional nav-walk mode for JS docs that load content per anchor
+- **Single-page mode**: Fetches full HTML once (static/dynamic/auto)
+  - Enumerates heading IDs and `href="#..."` anchors
+  - Slices content into sections (heading + content until next heading)
+  - Converts each section to Markdown (with table helper)
+  - Exports Markdown + JSON and runs completeness checks
+  - Optional nav-walk mode for JS docs that load content per anchor
+
+- **Multi-page crawl mode**: Crawls multiple pages with intelligent rate limiting
+  - Link-following crawl with configurable depth and max pages
+  - Sitemap URL support (including sitemap indexes)
+  - Per-URL output directories for organized multi-page scrapes
+  - Crawl statistics and error tracking
 
 ## Requirements
 
@@ -50,19 +56,39 @@ Dynamic + menu + content selectors:
 go run . --url https://api.freshservice.com/ --mode dynamic --wait-for "body" --nav-selector ".nav" --content-selector ".content" --yes
 ```
 
+Multi-page crawl (link following):
+
+```bash
+go run . --url https://docs.example.com --crawl --max-pages 50 --crawl-depth 2 --yes
+```
+
+Crawl from sitemap:
+
+```bash
+go run . --sitemap https://docs.example.com/sitemap.xml --max-pages 200 --yes
+```
+
+Crawl with URL filtering:
+
+```bash
+go run . --url https://docs.example.com --crawl --crawl-filter "/docs/" --max-pages 100 --yes
+```
+
 ## Usage
 
 Common flags:
 
 ```bash
+# Fetch & parse
 --mode auto|static|dynamic
 --output-dir output/<host>
 --wait-for ".selector"      # dynamic mode
 --headless true|false
---rate-limit 2.5             # requests per second (0 = off)
 --yes                        # skip confirmation prompt
 --strict                     # fail if completeness checks report issues
 --dry-run                    # fetch/analyze only; write nothing
+
+# Single-page mode
 --max-sections 25            # limit number of sections written (0 = all)
 --max-menu-items 50          # limit number of menu-based section files written (0 = all)
 --max-md-bytes 20000         # split section markdown files before this size (0 = no split)
@@ -72,6 +98,16 @@ Common flags:
 --content-selector ".content" # focus on content container
 --nav-walk                   # click each menu anchor and capture content
 --exclude-selector ".ads"    # remove elements before processing
+
+# Multi-page crawl mode
+--crawl                      # enable multi-page crawl mode
+--sitemap URL                # crawl from sitemap.xml (enables --crawl)
+--max-pages 100              # maximum pages to crawl (default: 100)
+--crawl-depth 2              # max link depth from start URL (default: 2)
+--crawl-filter "regex"       # regex to filter URLs during crawl
+
+# General
+--rate-limit 2.5             # requests per second (0 = off)
 --config config.json         # load JSON config
 --init-config                # interactive config wizard
 ```
@@ -133,6 +169,15 @@ Outputs:
 - `menu.json` (if --nav-selector provided)
 - `sections/` (if --nav-selector provided)
 
+### Chunking behavior
+
+When you set `--max-md-bytes`, `--max-chars`, or `--max-tokens`, the scraper splits outputs at **section boundaries**:
+
+- `content.md` becomes an index that points to `content/part-###.md` files.
+- `sections/<name>.md` becomes an index when split, with parts in `sections/<name>/part-###.md`.
+- Splits prefer `###`/`####` subheadings, then fall back to paragraph boundaries.
+- A single section is never split across files; if a section has no subheadings and exceeds the limit, it stays intact.
+
 Example output layout:
 
 ```
@@ -169,7 +214,12 @@ Create a JSON file and pass it with `--config`.
   "rate_limit_per_second": 2.5,
   "max_markdown_bytes": 20000,
   "max_chars": 20000,
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "crawl": false,
+  "sitemap_url": "",
+  "max_pages": 100,
+  "crawl_depth": 2,
+  "crawl_filter": ""
 }
 ```
 

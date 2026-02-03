@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"go_scrap/internal/crawler"
 	"go_scrap/internal/fetch"
 	"go_scrap/internal/markdown"
 	"go_scrap/internal/menu"
@@ -47,6 +49,12 @@ type Options struct {
 	MaxMarkdownBytes   int
 	MaxChars           int
 	MaxTokens          int
+	// Crawl mode options
+	Crawl       bool
+	SitemapURL  string
+	MaxPages    int
+	CrawlDepth  int
+	CrawlFilter string
 }
 
 type menuItem struct {
@@ -61,33 +69,261 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	baseDoc, result, err := prepareBaseDocument(ctx, normalized)
+	// Branch based on crawl mode
+	if normalized.Crawl {
+		return runCrawl(ctx, normalized)
+	}
+
+	return runSingle(ctx, normalized)
+}
+
+func runSingle(ctx context.Context, opts Options) error {
+	baseDoc, result, err := prepareBaseDocument(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	doc, err := buildDocument(ctx, normalized, baseDoc)
+	doc, err := buildDocument(ctx, opts, baseDoc)
 	if err != nil {
 		return err
 	}
 
 	rep := report.Analyze(doc)
-	printSummaryIfNeeded(normalized, result.SourceInfo, doc, rep)
+	printSummaryIfNeeded(opts, result.SourceInfo, doc, rep)
 
-	if normalized.DryRun {
+	if opts.DryRun {
 		fmt.Println("\nDry run complete (no files written).")
 		return nil
 	}
 
-	if !normalized.Yes && !confirm("Continue and generate outputs? [y/N]: ") {
+	if !opts.Yes && !confirm("Continue and generate outputs? [y/N]: ") {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
-	trimSections(doc, normalized.MaxSections)
+	trimSections(doc, opts.MaxSections)
 
 	conv := markdown.NewConverter()
-	return writeOutputs(normalized, baseDoc, doc, rep, conv)
+	return writeOutputs(opts, baseDoc, doc, rep, conv)
+}
+
+func runCrawl(ctx context.Context, opts Options) error {
+	c, baseURL, err := initCrawler(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	if !opts.Stdout {
+		fmt.Printf("Starting crawl from %s (max %d pages, depth %d)\n", baseURL, opts.MaxPages, opts.CrawlDepth)
+	}
+
+	results, stats, err := c.Crawl(ctx)
+	if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+		return fmt.Errorf("crawl failed: %w", err)
+	}
+
+	if !opts.Stdout {
+		fmt.Printf("Crawl complete: %d pages crawled, %d failed\n", stats.PagesCrawled, stats.PagesFailed)
+	}
+
+	if opts.DryRun {
+		fmt.Println("\nDry run complete (no files written).")
+		return nil
+	}
+
+	if !opts.Yes && !confirm("Continue and generate outputs? [y/N]: ") {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	return processCrawlResults(ctx, opts, results, stats)
+}
+
+func initCrawler(ctx context.Context, opts Options) (*crawler.Crawler, string, error) {
+	urlFilter, err := buildURLFilter(opts.CrawlFilter)
+	if err != nil {
+		return nil, "", err
+	}
+
+	baseURL, err := determineBaseURL(opts)
+	if err != nil {
+		return nil, "", err
+	}
+
+	crawlerOpts := buildCrawlerOptions(opts, baseURL, urlFilter)
+
+	c, err := crawler.New(crawlerOpts)
+	if err != nil {
+		return nil, "", fmt.Errorf("create crawler: %w", err)
+	}
+
+	if err := addSitemapURLs(ctx, c, opts); err != nil {
+		return nil, "", err
+	}
+
+	return c, baseURL, nil
+}
+
+func buildURLFilter(filter string) (*regexp.Regexp, error) {
+	if filter == "" {
+		return nil, nil
+	}
+	urlFilter, err := regexp.Compile(filter)
+	if err != nil {
+		return nil, fmt.Errorf("invalid crawl filter regex: %w", err)
+	}
+	return urlFilter, nil
+}
+
+func determineBaseURL(opts Options) (string, error) {
+	if opts.URL != "" {
+		return opts.URL, nil
+	}
+	if opts.SitemapURL != "" {
+		u, err := url.Parse(opts.SitemapURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid sitemap URL: %w", err)
+		}
+		return u.Scheme + "://" + u.Host, nil
+	}
+	return "", fmt.Errorf("no URL or sitemap URL provided")
+}
+
+func buildCrawlerOptions(opts Options, baseURL string, urlFilter *regexp.Regexp) crawler.Options {
+	crawlerOpts := crawler.Options{
+		BaseURL:     baseURL,
+		RateLimit:   opts.RateLimitPerSecond,
+		Parallelism: 2,
+		UserAgent:   opts.UserAgent,
+		MaxDepth:    opts.CrawlDepth,
+		MaxPages:    opts.MaxPages,
+		URLFilter:   urlFilter,
+		Timeout:     opts.Timeout,
+	}
+	if crawlerOpts.RateLimit <= 0 {
+		crawlerOpts.RateLimit = 1.0
+	}
+	return crawlerOpts
+}
+
+func addSitemapURLs(ctx context.Context, c *crawler.Crawler, opts Options) error {
+	if opts.SitemapURL == "" {
+		return nil
+	}
+	sitemapURLs, err := crawler.ParseSitemap(ctx, opts.SitemapURL, crawler.SitemapOptions{
+		UserAgent: opts.UserAgent,
+		Timeout:   opts.Timeout,
+	})
+	if err != nil {
+		return fmt.Errorf("parse sitemap: %w", err)
+	}
+	if !opts.Stdout {
+		fmt.Printf("Found %d URLs in sitemap\n", len(sitemapURLs))
+	}
+	if err := c.AddURLs(sitemapURLs); err != nil {
+		return fmt.Errorf("add sitemap URLs: %w", err)
+	}
+	return nil
+}
+
+func processCrawlResults(ctx context.Context, opts Options, results map[string]*crawler.Result, stats crawler.Stats) error {
+	conv := markdown.NewConverter()
+	pagesDir := filepath.Join(opts.OutputDir, "pages")
+
+	for pageURL, result := range results {
+		if result.Error != nil || result.HTML == "" {
+			continue
+		}
+
+		// Create per-URL output directory
+		pageDir, err := urlToOutputDir(pageURL, pagesDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s: %v\n", pageURL, err)
+			continue
+		}
+
+		// Process this page
+		pageOpts := opts
+		pageOpts.URL = pageURL
+		pageOpts.OutputDir = pageDir
+
+		baseDoc, err := parse.NewDocument(result.HTML)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", pageURL, err)
+			continue
+		}
+
+		if strings.TrimSpace(opts.ExcludeSelector) != "" {
+			_ = parse.RemoveSelectors(baseDoc, opts.ExcludeSelector)
+		}
+
+		doc, err := parseDocuments(baseDoc, opts.ContentSelector)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse sections for %s: %v\n", pageURL, err)
+			continue
+		}
+
+		rep := report.Analyze(doc)
+		trimSections(doc, opts.MaxSections)
+
+		if err := writeOutputs(pageOpts, baseDoc, doc, rep, conv); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write outputs for %s: %v\n", pageURL, err)
+			continue
+		}
+
+		if !opts.Stdout {
+			fmt.Printf("Wrote: %s (%d sections)\n", pageDir, len(doc.Sections))
+		}
+	}
+
+	// Write crawl stats
+	statsPath := filepath.Join(opts.OutputDir, "crawl-stats.json")
+	statsData, _ := json.MarshalIndent(stats, "", "  ")
+	if err := os.MkdirAll(opts.OutputDir, 0755); err == nil {
+		_ = os.WriteFile(statsPath, statsData, 0600)
+		if !opts.Stdout {
+			fmt.Printf("Wrote crawl stats: %s\n", statsPath)
+		}
+	}
+
+	return nil
+}
+
+func urlToOutputDir(pageURL, baseDir string) (string, error) {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Build path from URL path
+	path := strings.TrimPrefix(u.Path, "/")
+	if path == "" {
+		path = "index"
+	}
+
+	// Sanitize path components
+	path = strings.ReplaceAll(path, "\\", "/")
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = sanitizePathComponent(part)
+	}
+
+	return filepath.Join(baseDir, filepath.Join(parts...)), nil
+}
+
+func sanitizePathComponent(s string) string {
+	// Remove or replace invalid filename characters
+	s = strings.ReplaceAll(s, ":", "_")
+	s = strings.ReplaceAll(s, "?", "_")
+	s = strings.ReplaceAll(s, "*", "_")
+	s = strings.ReplaceAll(s, "\"", "_")
+	s = strings.ReplaceAll(s, "<", "_")
+	s = strings.ReplaceAll(s, ">", "_")
+	s = strings.ReplaceAll(s, "|", "_")
+	if s == "" {
+		s = "_"
+	}
+	return s
 }
 
 func prepareBaseDocument(ctx context.Context, opts Options) (*goquery.Document, fetch.Result, error) {
@@ -179,8 +415,12 @@ func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, 
 }
 
 func normalizeOptions(opts Options) (Options, error) {
-	if strings.TrimSpace(opts.URL) == "" {
+	// In crawl mode, URL can be empty if sitemap is provided
+	if strings.TrimSpace(opts.URL) == "" && !opts.Crawl {
 		return opts, errors.New("url is required")
+	}
+	if opts.Crawl && strings.TrimSpace(opts.URL) == "" && strings.TrimSpace(opts.SitemapURL) == "" {
+		return opts, errors.New("url or sitemap is required for crawl mode")
 	}
 	if opts.Mode == "" {
 		opts.Mode = fetch.ModeAuto
@@ -192,7 +432,11 @@ func normalizeOptions(opts Options) (Options, error) {
 		opts.UserAgent = "go_scrap/1.0"
 	}
 	if opts.OutputDir == "" {
-		host := hostFromURL(opts.URL)
+		urlForHost := opts.URL
+		if urlForHost == "" {
+			urlForHost = opts.SitemapURL
+		}
+		host := hostFromURL(urlForHost)
 		if host == "" {
 			host = "output"
 		}
