@@ -15,13 +15,9 @@ type Node struct {
 	Children []Node `json:"children,omitempty"`
 }
 
-func Extract(htmlText, selector string) ([]Node, error) {
+func Extract(doc *goquery.Document, selector string) ([]Node, error) {
 	if strings.TrimSpace(selector) == "" {
 		return nil, errors.New("nav selector is required")
-	}
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
-	if err != nil {
-		return nil, err
 	}
 	nav := doc.Find(selector).First()
 	if nav.Length() == 0 {

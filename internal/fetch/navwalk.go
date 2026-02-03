@@ -12,14 +12,8 @@ import (
 )
 
 func FetchAnchorHTML(ctx context.Context, opts Options, anchors []string) (map[string]string, error) {
-	if opts.URL == "" {
-		return nil, errors.New("url is required")
-	}
-	if opts.Timeout == 0 {
-		opts.Timeout = 45 * time.Second
-	}
-	if opts.UserAgent == "" {
-		opts.UserAgent = "go_scrap/1.0"
+	if err := normalizeAnchorOptions(&opts); err != nil {
+		return nil, err
 	}
 
 	baseURL, err := normalizeAnchorBase(opts.URL)
@@ -31,76 +25,17 @@ func FetchAnchorHTML(ctx context.Context, opts Options, anchors []string) (map[s
 		return nil, err
 	}
 
-	if err := playwright.Install(&playwright.RunOptions{}); err != nil {
-		return nil, fmt.Errorf("install playwright: %w", err)
-	}
-	pw, err := playwright.Run()
+	page, closeAll, err := openPage(opts)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = pw.Stop()
-	}()
+	defer closeAll()
 
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(opts.Headless),
-	})
-	if err != nil {
+	if err := gotoAndWait(page, baseURL, opts); err != nil {
 		return nil, err
 	}
-	defer browser.Close()
 
-	page, err := browser.NewPage(playwright.BrowserNewPageOptions{
-		UserAgent: playwright.String(opts.UserAgent),
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer page.Close()
-
-	if _, err := page.Goto(baseURL, playwright.PageGotoOptions{
-		Timeout:   playwright.Float(float64(opts.Timeout.Milliseconds())),
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	}); err != nil {
-		return nil, err
-	}
-	if opts.WaitForSelector != "" {
-		loc := page.Locator(opts.WaitForSelector)
-		if err := loc.WaitFor(playwright.LocatorWaitForOptions{
-			Timeout: playwright.Float(float64(opts.Timeout.Milliseconds())),
-		}); err != nil {
-			return nil, fmt.Errorf("wait-for selector timed out: %s", opts.WaitForSelector)
-		}
-	}
-
-	results := make(map[string]string, len(anchors))
-	for _, anchor := range anchors {
-		if strings.TrimSpace(anchor) == "" {
-			continue
-		}
-		targetURL := baseURL + "#" + anchor
-		if _, err := page.Goto(targetURL, playwright.PageGotoOptions{
-			Timeout:   playwright.Float(float64(opts.Timeout.Milliseconds())),
-			WaitUntil: playwright.WaitUntilStateNetworkidle,
-		}); err != nil {
-			return nil, err
-		}
-		if opts.WaitForSelector != "" {
-			loc := page.Locator(opts.WaitForSelector)
-			if err := loc.WaitFor(playwright.LocatorWaitForOptions{
-				Timeout: playwright.Float(float64(opts.Timeout.Milliseconds())),
-			}); err != nil {
-				return nil, fmt.Errorf("wait-for selector timed out: %s", opts.WaitForSelector)
-			}
-		}
-		html, err := page.Content()
-		if err != nil {
-			return nil, err
-		}
-		results[anchor] = html
-	}
-
-	return results, nil
+	return fetchAnchorContent(page, baseURL, opts, anchors)
 }
 
 func normalizeAnchorBase(rawURL string) (string, error) {
@@ -110,4 +45,89 @@ func normalizeAnchorBase(rawURL string) (string, error) {
 	}
 	u.Fragment = ""
 	return u.String(), nil
+}
+
+func normalizeAnchorOptions(opts *Options) error {
+	if opts.URL == "" {
+		return errors.New("url is required")
+	}
+	if opts.Timeout == 0 {
+		opts.Timeout = 45 * time.Second
+	}
+	if opts.UserAgent == "" {
+		opts.UserAgent = "go_scrap/1.0"
+	}
+	return nil
+}
+
+func openPage(opts Options) (playwright.Page, func(), error) {
+	if err := playwright.Install(&playwright.RunOptions{}); err != nil {
+		return nil, func() {}, fmt.Errorf("install playwright: %w", err)
+	}
+	pw, err := playwright.Run()
+	if err != nil {
+		return nil, func() {}, err
+	}
+
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(opts.Headless),
+	})
+	if err != nil {
+		_ = pw.Stop()
+		return nil, func() {}, err
+	}
+
+	page, err := browser.NewPage(playwright.BrowserNewPageOptions{
+		UserAgent: playwright.String(opts.UserAgent),
+	})
+	if err != nil {
+		_ = browser.Close()
+		_ = pw.Stop()
+		return nil, func() {}, err
+	}
+
+	closeAll := func() {
+		_ = page.Close()
+		_ = browser.Close()
+		_ = pw.Stop()
+	}
+	return page, closeAll, nil
+}
+
+func gotoAndWait(page playwright.Page, url string, opts Options) error {
+	if _, err := page.Goto(url, playwright.PageGotoOptions{
+		Timeout:   playwright.Float(float64(opts.Timeout.Milliseconds())),
+		WaitUntil: playwright.WaitUntilStateNetworkidle,
+	}); err != nil {
+		return err
+	}
+	if opts.WaitForSelector == "" {
+		return nil
+	}
+	loc := page.Locator(opts.WaitForSelector)
+	if err := loc.WaitFor(playwright.LocatorWaitForOptions{
+		Timeout: playwright.Float(float64(opts.Timeout.Milliseconds())),
+	}); err != nil {
+		return fmt.Errorf("wait-for selector timed out: %s", opts.WaitForSelector)
+	}
+	return nil
+}
+
+func fetchAnchorContent(page playwright.Page, baseURL string, opts Options, anchors []string) (map[string]string, error) {
+	results := make(map[string]string, len(anchors))
+	for _, anchor := range anchors {
+		if strings.TrimSpace(anchor) == "" {
+			continue
+		}
+		targetURL := baseURL + "#" + anchor
+		if err := gotoAndWait(page, targetURL, opts); err != nil {
+			return nil, err
+		}
+		html, err := page.Content()
+		if err != nil {
+			return nil, err
+		}
+		results[anchor] = html
+	}
+	return results, nil
 }

@@ -1,7 +1,10 @@
 package menu_test
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/PuerkitoBio/goquery"
 
 	"go_scrap/internal/menu"
 )
@@ -20,7 +23,11 @@ func TestExtract_NestedMenu(t *testing.T) {
 	  </ul>
 	</nav>`
 
-	nodes, err := menu.Extract(html, ".nav")
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	nodes, err := menu.Extract(doc, ".nav")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +45,11 @@ func TestExtract_NestedMenu(t *testing.T) {
 func TestExtract_FlatMenu(t *testing.T) {
 	html := `<nav class="nav"><a href="#x">X</a><a href="#y">Y</a></nav>`
 
-	nodes, err := menu.Extract(html, ".nav")
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	nodes, err := menu.Extract(doc, ".nav")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +62,11 @@ func TestExtract_FlatMenu(t *testing.T) {
 }
 
 func TestExtract_SelectorMissing(t *testing.T) {
-	_, err := menu.Extract("<div></div>", ".nav")
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader("<div></div>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = menu.Extract(doc, ".nav")
 	if err == nil {
 		t.Fatal("expected error for missing nav selector")
 	}

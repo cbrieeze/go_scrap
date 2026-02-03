@@ -91,7 +91,7 @@ go run . inspect --url https://example.com --wait-for "body"
 - Test configs (batch, optional dry-run):
 
 ```bash
-go run . test-configs --dir CONFIGS --dry-run --max-sections 3 --max-menu-items 5
+go run . test-configs --dir configs --dry-run --max-sections 3 --max-menu-items 5
 ```
 
 ## VS Code tasks

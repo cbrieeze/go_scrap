@@ -16,6 +16,8 @@ type Converter struct {
 func NewConverter() *Converter {
 	conv := htmltomd.NewConverter("", true, nil)
 	conv.Use(plugin.GitHubFlavored())
+	conv.Use(TablePlugin())
+	conv.Use(HardeningPlugin())
 
 	// Custom rule to preserve fenced code blocks with language hints.
 	conv.AddRules(codeBlockRule())

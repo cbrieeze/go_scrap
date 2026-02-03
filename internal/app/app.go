@@ -19,6 +19,8 @@ import (
 	"go_scrap/internal/output"
 	"go_scrap/internal/parse"
 	"go_scrap/internal/report"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 type Options struct {
@@ -33,8 +35,12 @@ type Options struct {
 	Yes                bool
 	Strict             bool
 	DryRun             bool
+	Stdout             bool
+	UseCache           bool
+	DownloadAssets     bool
 	NavSelector        string
 	ContentSelector    string
+	ExcludeSelector    string
 	NavWalk            bool
 	MaxSections        int
 	MaxMenuItems       int
@@ -52,26 +58,18 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	result, err := fetchResult(ctx, normalized)
+	baseDoc, result, err := prepareBaseDocument(ctx, normalized)
 	if err != nil {
 		return err
 	}
 
-	var doc *parse.Document
-	if normalized.NavWalk && strings.TrimSpace(normalized.NavSelector) != "" {
-		doc, err = runNavWalk(ctx, normalized, result.HTML)
-		if err != nil {
-			return err
-		}
-	} else {
-		doc, err = parseDocuments(result.HTML, normalized.ContentSelector)
-		if err != nil {
-			return err
-		}
+	doc, err := buildDocument(ctx, normalized, baseDoc)
+	if err != nil {
+		return err
 	}
 
 	rep := report.Analyze(doc)
-	printSummary(result.SourceInfo, doc, rep)
+	printSummaryIfNeeded(normalized, result.SourceInfo, doc, rep)
 
 	if normalized.DryRun {
 		fmt.Println("\nDry run complete (no files written).")
@@ -86,25 +84,77 @@ func Run(ctx context.Context, opts Options) error {
 	trimSections(doc, normalized.MaxSections)
 
 	conv := markdown.NewConverter()
+	return writeOutputs(normalized, baseDoc, doc, rep, conv)
+}
+
+func prepareBaseDocument(ctx context.Context, opts Options) (*goquery.Document, fetch.Result, error) {
+	result, err := fetchResult(ctx, opts)
+	if err != nil {
+		return nil, fetch.Result{}, err
+	}
+
+	baseDoc, err := parse.NewDocument(result.HTML)
+	if err != nil {
+		return nil, fetch.Result{}, err
+	}
+
+	if strings.TrimSpace(opts.ExcludeSelector) != "" {
+		_ = parse.RemoveSelectors(baseDoc, opts.ExcludeSelector)
+	}
+
+	if opts.DownloadAssets && !opts.DryRun {
+		if err := output.Download(baseDoc, opts.URL, opts.OutputDir, opts.UserAgent); err != nil && !opts.Stdout {
+			fmt.Fprintf(os.Stderr, "Warning: asset processing failed: %v\n", err)
+		}
+	}
+
+	return baseDoc, result, nil
+}
+
+func buildDocument(ctx context.Context, opts Options, baseDoc *goquery.Document) (*parse.Document, error) {
+	if opts.NavWalk && strings.TrimSpace(opts.NavSelector) != "" {
+		return runNavWalk(ctx, opts, baseDoc)
+	}
+	return parseDocuments(baseDoc, opts.ContentSelector)
+}
+
+func printSummaryIfNeeded(opts Options, sourceInfo string, doc *parse.Document, rep report.Report) {
+	if opts.Stdout {
+		return
+	}
+	printSummary(sourceInfo, doc, rep)
+}
+
+func writeOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, rep report.Report, conv *markdown.Converter) error {
 	md, err := buildMarkdown(conv, doc.Sections)
 	if err != nil {
 		return err
 	}
 
-	if normalized.Strict && reportHasIssues(rep) {
+	if opts.Strict && reportHasIssues(rep) {
 		return errors.New("completeness checks failed (use --strict=false to allow)")
 	}
 
-	mdPath, jsonPath, err := output.WriteAll(doc, rep, md, output.WriteOptions{OutputDir: normalized.OutputDir})
+	mdPath, jsonPath, err := output.WriteAll(doc, rep, md, output.WriteOptions{OutputDir: opts.OutputDir})
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nWrote markdown: %s\n", mdPath)
-	fmt.Printf("Wrote json: %s\n", jsonPath)
+	if opts.Stdout {
+		fmt.Println(md)
+	} else {
+		fmt.Printf("\nWrote markdown: %s\n", mdPath)
+		fmt.Printf("Wrote json: %s\n", jsonPath)
+	}
 
-	if err := writeMenuOutputs(normalized, result.HTML, doc, conv); err != nil {
+	if err := writeMenuOutputs(opts, baseDoc, doc, conv); err != nil {
 		return err
+	}
+
+	if !opts.Stdout {
+		if indexPath, err := output.WriteIndex(opts.OutputDir, opts.URL, doc.Sections); err == nil {
+			fmt.Printf("Wrote index: %s\n", indexPath)
+		}
 	}
 
 	return nil
@@ -130,6 +180,9 @@ func normalizeOptions(opts Options) (Options, error) {
 		}
 		opts.OutputDir = filepath.Join("output", host)
 	}
+	if opts.Stdout {
+		opts.Yes = true
+	}
 	return opts, nil
 }
 
@@ -138,23 +191,86 @@ func fetchResult(ctx context.Context, opts Options) (fetch.Result, error) {
 	if opts.NavWalk {
 		mode = fetch.ModeDynamic
 	}
-	return fetch.Fetch(ctx, fetch.Options{
+
+	if opts.UseCache {
+		cachePath := fetch.GetCachePath(opts.URL)
+		if content, err := os.ReadFile(cachePath); err == nil {
+			return fetch.Result{HTML: string(content), SourceInfo: "cache"}, nil
+		}
+	}
+
+	var result fetch.Result
+	var err error
+	backoffs := []time.Duration{0, time.Second, 2 * time.Second}
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(backoffs[attempt])
+			if !opts.Stdout {
+				fmt.Fprintf(os.Stderr, "Fetch attempt %d failed. Retrying...\n", attempt)
+			}
+		}
+		result, err = fetch.Fetch(ctx, fetch.Options{
+			URL:                opts.URL,
+			Mode:               mode,
+			Timeout:            opts.Timeout,
+			UserAgent:          opts.UserAgent,
+			WaitForSelector:    opts.WaitFor,
+			Headless:           opts.Headless,
+			RateLimitPerSecond: opts.RateLimitPerSecond,
+		})
+		if err == nil || ctx.Err() != nil {
+			break
+		}
+	}
+	if err != nil {
+		return fetch.Result{}, err
+	}
+
+	if opts.UseCache {
+		cachePath := fetch.GetCachePath(opts.URL)
+		_ = fetch.SaveToCache(cachePath, result.HTML)
+	}
+
+	return result, nil
+}
+
+func runNavWalk(ctx context.Context, opts Options, baseDoc *goquery.Document) (*parse.Document, error) {
+	nodes, err := menu.Extract(baseDoc, opts.NavSelector)
+	if err != nil {
+		return nil, fmt.Errorf("menu extract failed (%s): %w", opts.NavSelector, err)
+	}
+	items := flattenMenu(nodes)
+	anchors := collectAnchors(items)
+
+	htmlByAnchor, err := fetch.FetchAnchorHTML(ctx, fetch.Options{
 		URL:                opts.URL,
-		Mode:               mode,
+		Mode:               fetch.ModeDynamic,
 		Timeout:            opts.Timeout,
 		UserAgent:          opts.UserAgent,
 		WaitForSelector:    opts.WaitFor,
 		Headless:           opts.Headless,
 		RateLimitPerSecond: opts.RateLimitPerSecond,
-	})
+	}, anchors)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("navwalk timed out processing %d anchors (try increasing --timeout or reducing menu depth): %w", len(anchors), err)
+		}
+		return nil, err
+	}
+
+	sections, headings := buildNavSections(items, anchors, htmlByAnchor, opts)
+
+	return &parse.Document{
+		HTML:               documentOuterHTML(baseDoc),
+		Sections:           sections,
+		HeadingIDs:         headings,
+		AnchorTargets:      anchors,
+		AllElementIDs:      headings,
+		AnchorTargetsByRaw: anchors,
+	}, nil
 }
 
-func runNavWalk(ctx context.Context, opts Options, htmlText string) (*parse.Document, error) {
-	nodes, err := menu.Extract(htmlText, opts.NavSelector)
-	if err != nil {
-		return nil, fmt.Errorf("menu extract failed (%s): %w", opts.NavSelector, err)
-	}
-	items := flattenMenu(nodes)
+func collectAnchors(items []menuItem) []string {
 	anchors := make([]string, 0, len(items))
 	seen := map[string]struct{}{}
 	for _, item := range items {
@@ -167,20 +283,10 @@ func runNavWalk(ctx context.Context, opts Options, htmlText string) (*parse.Docu
 		seen[item.Anchor] = struct{}{}
 		anchors = append(anchors, item.Anchor)
 	}
+	return anchors
+}
 
-	htmlByAnchor, err := fetch.FetchAnchorHTML(ctx, fetch.Options{
-		URL:                opts.URL,
-		Mode:               fetch.ModeDynamic,
-		Timeout:            opts.Timeout,
-		UserAgent:          opts.UserAgent,
-		WaitForSelector:    opts.WaitFor,
-		Headless:           opts.Headless,
-		RateLimitPerSecond: opts.RateLimitPerSecond,
-	}, anchors)
-	if err != nil {
-		return nil, err
-	}
-
+func buildNavSections(items []menuItem, anchors []string, htmlByAnchor map[string]string, opts Options) ([]parse.Section, []string) {
 	sections := []parse.Section{}
 	headings := []string{}
 	for _, item := range items {
@@ -191,38 +297,56 @@ func runNavWalk(ctx context.Context, opts Options, htmlText string) (*parse.Docu
 		if !ok {
 			continue
 		}
-		contentHTML := htmlForAnchor
-		if strings.TrimSpace(opts.ContentSelector) != "" {
-			extracted, err := parse.ExtractBySelector(htmlForAnchor, opts.ContentSelector)
-			if err == nil && strings.TrimSpace(extracted) != "" {
-				contentHTML = extracted
-			}
-		}
-		text := strings.TrimSpace(parse.StripTags(contentHTML))
-		level := 2 + item.Depth
-		if level > 6 {
-			level = 6
-		}
-		section := parse.Section{
-			HeadingText:   strings.TrimSpace(item.Title),
-			HeadingLevel:  level,
-			HeadingID:     item.Anchor,
-			ContentHTML:   contentHTML,
-			ContentText:   text,
-			AnchorTargets: anchors,
+		section, ok := buildSectionFromAnchor(item, htmlForAnchor, anchors, opts)
+		if !ok {
+			continue
 		}
 		sections = append(sections, section)
 		headings = append(headings, item.Anchor)
 	}
+	return sections, headings
+}
 
-	return &parse.Document{
-		HTML:               htmlText,
-		Sections:           sections,
-		HeadingIDs:         headings,
-		AnchorTargets:      anchors,
-		AllElementIDs:      headings,
-		AnchorTargetsByRaw: anchors,
-	}, nil
+func buildSectionFromAnchor(item menuItem, htmlForAnchor string, anchors []string, opts Options) (parse.Section, bool) {
+	anchorDoc, err := parse.NewDocument(htmlForAnchor)
+	if err != nil {
+		return parse.Section{}, false
+	}
+	contentDoc := prepareContentDoc(anchorDoc, opts)
+
+	contentHTML := documentOuterHTML(contentDoc)
+	contentText := strings.TrimSpace(contentDoc.Text())
+	contentIDs := documentIDs(contentDoc)
+	level := 2 + item.Depth
+	if level > 6 {
+		level = 6
+	}
+	section := parse.Section{
+		HeadingText:   strings.TrimSpace(item.Title),
+		HeadingLevel:  level,
+		HeadingID:     item.Anchor,
+		ContentHTML:   contentHTML,
+		ContentText:   contentText,
+		AnchorTargets: anchors,
+		ContentIDs:    contentIDs,
+	}
+	return section, true
+}
+
+func prepareContentDoc(anchorDoc *goquery.Document, opts Options) *goquery.Document {
+	if strings.TrimSpace(opts.ExcludeSelector) != "" {
+		_ = parse.RemoveSelectors(anchorDoc, opts.ExcludeSelector)
+	}
+	if opts.DownloadAssets && !opts.DryRun {
+		_ = output.Download(anchorDoc, opts.URL, opts.OutputDir, opts.UserAgent)
+	}
+	if strings.TrimSpace(opts.ContentSelector) != "" {
+		extracted, err := parse.ExtractBySelector(anchorDoc, opts.ContentSelector)
+		if err == nil && extracted != nil {
+			return extracted
+		}
+	}
+	return anchorDoc
 }
 
 func flattenMenu(nodes []menu.Node) []menuItem {
@@ -240,38 +364,35 @@ func flattenMenu(nodes []menu.Node) []menuItem {
 	return items
 }
 
-func parseDocuments(htmlText, contentSelector string) (*parse.Document, error) {
-	fullDoc, err := parse.Parse(htmlText)
+func parseDocuments(doc *goquery.Document, contentSelector string) (*parse.Document, error) {
+	fullDoc, err := parse.Parse(doc)
 	if err != nil {
 		return nil, err
 	}
 
-	contentHTML := htmlText
+	contentDoc := doc
 	if strings.TrimSpace(contentSelector) != "" {
-		extracted, err := parse.ExtractBySelector(htmlText, contentSelector)
-		if err != nil {
-			return nil, fmt.Errorf("content selector failed (%s): %w", contentSelector, err)
-		}
-		if strings.TrimSpace(extracted) != "" {
-			contentHTML = extracted
+		extracted, err := parse.ExtractBySelector(doc, contentSelector)
+		if err == nil && extracted != nil {
+			contentDoc = extracted
 		}
 	}
 
-	contentDoc, err := parse.Parse(contentHTML)
+	contentParsed, err := parse.Parse(contentDoc)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(contentDoc.Sections) == 0 {
+	if len(contentParsed.Sections) == 0 {
 		return fullDoc, nil
 	}
 
 	// Keep IDs/anchors from the full page for menu stitching and completeness checks.
-	contentDoc.HeadingIDs = fullDoc.HeadingIDs
-	contentDoc.AnchorTargets = fullDoc.AnchorTargets
-	contentDoc.AllElementIDs = fullDoc.AllElementIDs
-	contentDoc.AnchorTargetsByRaw = fullDoc.AnchorTargetsByRaw
-	return contentDoc, nil
+	contentParsed.HeadingIDs = fullDoc.HeadingIDs
+	contentParsed.AnchorTargets = fullDoc.AnchorTargets
+	contentParsed.AllElementIDs = fullDoc.AllElementIDs
+	contentParsed.AnchorTargetsByRaw = fullDoc.AnchorTargetsByRaw
+	return contentParsed, nil
 }
 
 func printSummary(sourceInfo string, doc *parse.Document, rep report.Report) {
@@ -326,11 +447,11 @@ func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, 
 	return mdBuilder.String(), nil
 }
 
-func writeMenuOutputs(opts Options, htmlText string, doc *parse.Document, conv *markdown.Converter) error {
+func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, conv *markdown.Converter) error {
 	if strings.TrimSpace(opts.NavSelector) == "" {
 		return nil
 	}
-	nodes, err := menu.Extract(htmlText, opts.NavSelector)
+	nodes, err := menu.Extract(baseDoc, opts.NavSelector)
 	if err != nil {
 		return fmt.Errorf("menu extract failed (%s): %w", opts.NavSelector, err)
 	}
@@ -340,14 +461,25 @@ func writeMenuOutputs(opts Options, htmlText string, doc *parse.Document, conv *
 
 	mdByID := map[string]string{}
 	for _, section := range doc.Sections {
-		if section.HeadingID == "" {
-			continue
-		}
 		md, err := conv.SectionToMarkdown(section.HeadingText, section.HeadingLevel, section.ContentHTML)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to convert section %q: %v\n", section.HeadingText, err)
 			continue
 		}
-		mdByID[section.HeadingID] = md
+
+		if opts.DownloadAssets {
+			md = strings.ReplaceAll(md, "(assets/", "(../assets/")
+			md = strings.ReplaceAll(md, "\"assets/", "\"../assets/")
+		}
+
+		if section.HeadingID != "" {
+			mdByID[section.HeadingID] = md
+		}
+		for _, id := range section.ContentIDs {
+			if _, ok := mdByID[id]; !ok {
+				mdByID[id] = md
+			}
+		}
 	}
 
 	if err := output.WriteSectionFiles(opts.OutputDir, nodes, mdByID, opts.MaxMenuItems); err != nil {
@@ -406,4 +538,30 @@ func reportHasIssues(rep report.Report) bool {
 		len(rep.BrokenAnchors) > 0 ||
 		len(rep.EmptySections) > 0 ||
 		len(rep.HeadingGaps) > 0
+}
+
+func documentOuterHTML(doc *goquery.Document) string {
+	if doc == nil || doc.Selection == nil {
+		return ""
+	}
+	if html, err := goquery.OuterHtml(doc.Selection); err == nil && strings.TrimSpace(html) != "" {
+		return html
+	}
+	if html, err := doc.Html(); err == nil {
+		return html
+	}
+	return ""
+}
+
+func documentIDs(doc *goquery.Document) []string {
+	if doc == nil || doc.Selection == nil {
+		return nil
+	}
+	ids := []string{}
+	doc.Find("[id]").Each(func(_ int, s *goquery.Selection) {
+		if id, exists := s.Attr("id"); exists && id != "" {
+			ids = append(ids, id)
+		}
+	})
+	return ids
 }

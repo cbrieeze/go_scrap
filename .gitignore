@@ -7,6 +7,8 @@ obj/
 *.dylib
 *.test
 *.out
+.cache
+
 
 # Node
 node_modules/

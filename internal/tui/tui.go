@@ -24,71 +24,96 @@ type Result struct {
 }
 
 func Run() (Result, error) {
-	var (
-		urlStr          string
-		mode            string = "dynamic"
-		timeoutSecStr   string = "60"
-		rateLimitStr    string = "0"
-		userAgent       string = "go_scrap/1.0"
-		waitFor         string = "body"
-		headless        bool   = true
-		outputDir       string
-		navSel          string
-		contentSel      string
-		navWalk         bool
-		strict          bool
-		dryRun          bool
-		yes             bool   = true
-		maxSectionsStr  string = "0"
-		maxMenuItemsStr string = "0"
+	state := newFormState()
+	form := buildForm(state)
+	if err := form.Run(); err != nil {
+		return Result{}, err
+	}
 
-		saveConfig bool
-		configPath string = "config.json"
-		runNow     bool   = true
-	)
+	return buildResult(state)
+}
 
-	form := huh.NewForm(
+type formState struct {
+	urlStr          string
+	mode            string
+	timeoutSecStr   string
+	rateLimitStr    string
+	userAgent       string
+	waitFor         string
+	headless        bool
+	outputDir       string
+	navSel          string
+	contentSel      string
+	navWalk         bool
+	strict          bool
+	dryRun          bool
+	yes             bool
+	maxSectionsStr  string
+	maxMenuItemsStr string
+	saveConfig      bool
+	configPath      string
+	runNow          bool
+}
+
+func newFormState() *formState {
+	return &formState{
+		mode:            "dynamic",
+		timeoutSecStr:   "60",
+		rateLimitStr:    "0",
+		userAgent:       "go_scrap/1.0",
+		waitFor:         "body",
+		headless:        true,
+		yes:             true,
+		maxSectionsStr:  "0",
+		maxMenuItemsStr: "0",
+		configPath:      "config.json",
+		runNow:          true,
+	}
+}
+
+func buildForm(state *formState) *huh.Form {
+	return huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("URL").Placeholder("https://example.com").Value(&urlStr).
+			huh.NewInput().Title("URL").Placeholder("https://example.com").Value(&state.urlStr).
 				Validate(func(s string) error {
 					if strings.TrimSpace(s) == "" {
 						return errors.New("url is required")
 					}
 					return nil
 				}),
-			huh.NewSelect[string]().Title("Mode").Value(&mode).Options(
+			huh.NewSelect[string]().Title("Mode").Value(&state.mode).Options(
 				huh.NewOption("auto", "auto"),
 				huh.NewOption("static", "static"),
 				huh.NewOption("dynamic", "dynamic"),
 			),
-			huh.NewInput().Title("Timeout (seconds)").Value(&timeoutSecStr).
+			huh.NewInput().Title("Timeout (seconds)").Value(&state.timeoutSecStr).
 				Validate(validateIntString(1, 3600)),
-			huh.NewInput().Title("Rate limit (requests/sec, 0=off)").Value(&rateLimitStr).
+			huh.NewInput().Title("Rate limit (requests/sec, 0=off)").Value(&state.rateLimitStr).
 				Validate(validateFloatString(0, 1000)),
-			huh.NewInput().Title("Wait-for selector (dynamic)").Value(&waitFor),
-			huh.NewConfirm().Title("Headless (dynamic)").Value(&headless),
-			huh.NewInput().Title("User-Agent").Value(&userAgent),
+			huh.NewInput().Title("Wait-for selector (dynamic)").Value(&state.waitFor),
+			huh.NewConfirm().Title("Headless (dynamic)").Value(&state.headless),
+			huh.NewInput().Title("User-Agent").Value(&state.userAgent),
 		),
 		huh.NewGroup(
-			huh.NewInput().Title("Output dir (optional)").Placeholder("output/<host>").Value(&outputDir),
-			huh.NewInput().Title("Nav selector (optional)").Placeholder(".nav").Value(&navSel),
-			huh.NewInput().Title("Content selector (optional)").Placeholder(".content").Value(&contentSel),
-			huh.NewConfirm().Title("Nav walk (click each menu anchor)").Value(&navWalk),
-			huh.NewInput().Title("Max sections (0=all)").Value(&maxSectionsStr).
+			huh.NewInput().Title("Output dir (optional)").Placeholder("output/<host>").Value(&state.outputDir),
+			huh.NewInput().Title("Nav selector (optional)").Placeholder(".nav").Value(&state.navSel),
+			huh.NewInput().Title("Content selector (optional)").Placeholder(".content").Value(&state.contentSel),
+			huh.NewConfirm().Title("Nav walk (click each menu anchor)").Value(&state.navWalk),
+			huh.NewInput().Title("Max sections (0=all)").Value(&state.maxSectionsStr).
 				Validate(validateIntString(0, 1000000)),
-			huh.NewInput().Title("Max menu items (0=all)").Value(&maxMenuItemsStr).
+			huh.NewInput().Title("Max menu items (0=all)").Value(&state.maxMenuItemsStr).
 				Validate(validateIntString(0, 1000000)),
 		),
 		huh.NewGroup(
-			huh.NewConfirm().Title("Dry run (no files written)").Value(&dryRun),
-			huh.NewConfirm().Title("Strict (fail on completeness issues)").Value(&strict),
-			huh.NewConfirm().Title("Skip confirmation prompt (--yes)").Value(&yes),
+			huh.NewConfirm().Title("Dry run (no files written)").Value(&state.dryRun),
+			huh.NewConfirm().Title("Strict (fail on completeness issues)").Value(&state.strict),
+			huh.NewConfirm().Title("Skip confirmation prompt (--yes)").Value(&state.yes),
 		),
 		huh.NewGroup(
-			huh.NewConfirm().Title("Save config file").Value(&saveConfig),
-			huh.NewInput().Title("Config path").Value(&configPath).
+			huh.NewConfirm().Title("Save config file").Value(&state.saveConfig),
+			huh.NewInput().Title("Config path").Value(&state.configPath).
 				Validate(func(s string) error {
-					if !saveConfig {
+					if !state.saveConfig {
 						return nil
 					}
 					if strings.TrimSpace(s) == "" {
@@ -99,74 +124,101 @@ func Run() (Result, error) {
 					}
 					return nil
 				}),
-			huh.NewConfirm().Title("Run now").Value(&runNow),
+			huh.NewConfirm().Title("Run now").Value(&state.runNow),
 		),
 	)
+}
 
-	if err := form.Run(); err != nil {
+func buildResult(state *formState) (Result, error) {
+	timeoutSec, err := parsePositiveInt(state.timeoutSecStr, "timeout must be a positive integer")
+	if err != nil {
+		return Result{}, err
+	}
+	rateLimit, err := parseNonNegativeFloat(state.rateLimitStr, "rate limit must be a number >= 0")
+	if err != nil {
+		return Result{}, err
+	}
+	maxSections, err := parseNonNegativeInt(state.maxSectionsStr, "max sections must be an integer >= 0")
+	if err != nil {
+		return Result{}, err
+	}
+	maxMenuItems, err := parseNonNegativeInt(state.maxMenuItemsStr, "max menu items must be an integer >= 0")
+	if err != nil {
 		return Result{}, err
 	}
 
-	timeoutSec, err := parseInt(timeoutSecStr)
-	if err != nil || timeoutSec <= 0 {
-		return Result{}, errors.New("timeout must be a positive integer")
-	}
-	rateLimit, err := parseFloat(rateLimitStr)
-	if err != nil || rateLimit < 0 {
-		return Result{}, errors.New("rate limit must be a number >= 0")
-	}
-	maxSections, err := parseInt(maxSectionsStr)
-	if err != nil || maxSections < 0 {
-		return Result{}, errors.New("max sections must be an integer >= 0")
-	}
-	maxMenuItems, err := parseInt(maxMenuItemsStr)
-	if err != nil || maxMenuItems < 0 {
-		return Result{}, errors.New("max menu items must be an integer >= 0")
-	}
-
 	cfg := config.Config{
-		Mode:               mode,
-		OutputDir:          strings.TrimSpace(outputDir),
+		URL:                strings.TrimSpace(state.urlStr),
+		Mode:               state.mode,
+		OutputDir:          strings.TrimSpace(state.outputDir),
 		TimeoutSeconds:     timeoutSec,
 		RateLimitPerSecond: rateLimit,
-		UserAgent:          strings.TrimSpace(userAgent),
-		WaitForSelector:    strings.TrimSpace(waitFor),
-		Headless:           &headless,
-		NavSelector:        strings.TrimSpace(navSel),
-		ContentSelector:    strings.TrimSpace(contentSel),
-		NavWalk:            navWalk,
+		UserAgent:          strings.TrimSpace(state.userAgent),
+		WaitForSelector:    strings.TrimSpace(state.waitFor),
+		Headless:           &state.headless,
+		NavSelector:        strings.TrimSpace(state.navSel),
+		ContentSelector:    strings.TrimSpace(state.contentSel),
+		NavWalk:            state.navWalk,
 	}
 
-	if saveConfig {
-		data, err := config.Marshal(cfg)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := os.WriteFile(configPath, data, 0600); err != nil {
+	if state.saveConfig {
+		if err := writeConfig(state.configPath, cfg); err != nil {
 			return Result{}, err
 		}
 	}
 
 	opts := app.Options{
-		URL:                strings.TrimSpace(urlStr),
-		Mode:               fetch.Mode(strings.ToLower(strings.TrimSpace(mode))),
-		OutputDir:          strings.TrimSpace(outputDir),
+		URL:                strings.TrimSpace(state.urlStr),
+		Mode:               fetch.Mode(strings.ToLower(strings.TrimSpace(state.mode))),
+		OutputDir:          strings.TrimSpace(state.outputDir),
 		Timeout:            time.Duration(timeoutSec) * time.Second,
 		RateLimitPerSecond: rateLimit,
-		UserAgent:          strings.TrimSpace(userAgent),
-		WaitFor:            strings.TrimSpace(waitFor),
-		Headless:           headless,
-		Yes:                yes,
-		Strict:             strict,
-		DryRun:             dryRun,
-		NavSelector:        strings.TrimSpace(navSel),
-		ContentSelector:    strings.TrimSpace(contentSel),
-		NavWalk:            navWalk,
+		UserAgent:          strings.TrimSpace(state.userAgent),
+		WaitFor:            strings.TrimSpace(state.waitFor),
+		Headless:           state.headless,
+		Yes:                state.yes,
+		Strict:             state.strict,
+		DryRun:             state.dryRun,
+		NavSelector:        strings.TrimSpace(state.navSel),
+		ContentSelector:    strings.TrimSpace(state.contentSel),
+		NavWalk:            state.navWalk,
 		MaxSections:        maxSections,
 		MaxMenuItems:       maxMenuItems,
 	}
 
-	return Result{Options: opts, SaveConfig: saveConfig, ConfigPath: configPath, Config: cfg, RunNow: runNow}, nil
+	return Result{Options: opts, SaveConfig: state.saveConfig, ConfigPath: state.configPath, Config: cfg, RunNow: state.runNow}, nil
+}
+
+func writeConfig(path string, cfg config.Config) error {
+	data, err := config.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func parsePositiveInt(s, errMsg string) (int, error) {
+	val, err := parseInt(s)
+	if err != nil || val <= 0 {
+		return 0, errors.New(errMsg)
+	}
+	return val, nil
+}
+
+func parseNonNegativeInt(s, errMsg string) (int, error) {
+	val, err := parseInt(s)
+	if err != nil || val < 0 {
+		return 0, errors.New(errMsg)
+	}
+	return val, nil
+}
+
+func parseNonNegativeFloat(s, errMsg string) (float64, error) {
+	val, err := parseFloat(s)
+	if err != nil || val < 0 {
+		return 0, errors.New(errMsg)
+	}
+	return val, nil
 }
 
 func parseInt(s string) (int, error) {

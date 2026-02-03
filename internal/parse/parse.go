@@ -1,12 +1,12 @@
 package parse
 
 import (
-	"bytes"
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"golang.org/x/net/html"
 )
 
 type Section struct {
@@ -17,6 +17,7 @@ type Section struct {
 	ContentHTML   string   `json:"content_html"`
 	ContentText   string   `json:"content_text"`
 	AnchorTargets []string `json:"anchor_targets"`
+	ContentIDs    []string `json:"-"`
 }
 
 type Document struct {
@@ -28,70 +29,38 @@ type Document struct {
 	AnchorTargetsByRaw []string
 }
 
-type headingInfo struct {
-	Node *html.Node
-	ID   string
-}
-
-func ExtractBySelector(htmlText, selector string) (string, error) {
-	if strings.TrimSpace(selector) == "" {
-		return htmlText, nil
-	}
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
-	if err != nil {
-		return "", err
-	}
-	sel := doc.Find(selector).First()
-	if sel.Length() == 0 {
-		return "", errors.New("selector not found: " + selector)
-	}
-	node := sel.Get(0)
-	if node == nil {
-		return "", errors.New("selector node missing: " + selector)
-	}
-	var buf bytes.Buffer
-	if err := html.Render(&buf, node); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-func StripTags(htmlText string) string {
-	return stripTags(htmlText)
-}
-
-func Parse(htmlText string) (*Document, error) {
+func NewDocument(htmlText string) (*goquery.Document, error) {
 	if strings.TrimSpace(htmlText) == "" {
 		return nil, errors.New("empty html")
 	}
-	node, err := html.Parse(strings.NewReader(htmlText))
-	if err != nil {
-		return nil, err
-	}
-	query := goquery.NewDocumentFromNode(node)
+	return goquery.NewDocumentFromReader(strings.NewReader(htmlText))
+}
 
-	headings := []headingInfo{}
-	query.Find("h1, h2, h3, h4, h5, h6").Each(func(_ int, s *goquery.Selection) {
-		n := s.Get(0)
-		if n == nil {
-			return
-		}
-		id := ""
-		if val, exists := s.Attr("id"); exists && val != "" {
-			id = val
-		} else {
-			child := s.Find("[id]").First()
-			if child.Length() > 0 {
-				if val, exists := child.Attr("id"); exists && val != "" {
-					id = val
-				}
-			}
-		}
-		headings = append(headings, headingInfo{Node: n, ID: id})
-	})
+func ExtractBySelector(doc *goquery.Document, selector string) (*goquery.Document, error) {
+	if doc == nil {
+		return nil, errors.New("nil document")
+	}
+	if strings.TrimSpace(selector) == "" {
+		return doc, nil
+	}
+	sel := doc.Find(selector).First()
+	if sel.Length() == 0 {
+		return nil, errors.New("selector not found: " + selector)
+	}
+	node := sel.Get(0)
+	if node == nil {
+		return nil, errors.New("selector node missing: " + selector)
+	}
+	return goquery.NewDocumentFromNode(node), nil
+}
+
+func Parse(doc *goquery.Document) (*Document, error) {
+	if doc == nil {
+		return nil, errors.New("nil document")
+	}
 
 	allIDs := []string{}
-	query.Find("[id]").Each(func(_ int, s *goquery.Selection) {
+	doc.Find("[id]").Each(func(_ int, s *goquery.Selection) {
 		if id, exists := s.Attr("id"); exists && id != "" {
 			allIDs = append(allIDs, id)
 		}
@@ -99,7 +68,7 @@ func Parse(htmlText string) (*Document, error) {
 
 	anchorsRaw := []string{}
 	anchors := []string{}
-	query.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
 		if strings.HasPrefix(href, "#") && len(href) > 1 {
 			anchorsRaw = append(anchorsRaw, href)
@@ -107,39 +76,62 @@ func Parse(htmlText string) (*Document, error) {
 		}
 	})
 
-	sections := make([]Section, 0, len(headings))
+	sections := []Section{}
 	headingIDSet := map[string]struct{}{}
-	for _, h := range headings {
-		next := findNextHeading(h.Node)
-		contentHTML := collectContentBetween(h.Node, next)
-		headingText := strings.TrimSpace(extractText(h.Node))
-		headingID := h.ID
+
+	doc.Find("h1, h2, h3, h4, h5, h6").Each(func(_ int, s *goquery.Selection) {
+		// 1. Resolve Heading ID
+		headingID := s.AttrOr("id", "")
 		if headingID == "" {
-			headingID = slugifyHeading(headingText)
-		}
-		if headingID != "" {
-			if _, exists := headingIDSet[headingID]; !exists {
-				headingIDSet[headingID] = struct{}{}
+			if childID := s.Find("[id]").First().AttrOr("id", ""); childID != "" {
+				headingID = childID
 			}
 		}
 
+		// 2. Extract Content (siblings until next heading)
+		contentSel := s.NextUntil("h1, h2, h3, h4, h5, h6")
+
+		// Handle nested headings (e.g. <div><h2>...</h2></div> <p>Content</p>)
+		// If the heading is the last element in its parent, the content might be after the parent.
+		if contentSel.Length() == 0 && s.Next().Length() == 0 {
+			parent := s.Parent()
+			if !parent.Is("body, html") {
+				contentSel = parent.NextUntil("h1, h2, h3, h4, h5, h6, :has(h1, h2, h3, h4, h5, h6)")
+			}
+		}
+
+		contentHTML, contentText, contentIDs := renderSelection(contentSel)
+
+		// 3. Extract Heading Text
+		headingText := strings.TrimSpace(s.Text())
+		// 4. Generate Slug if needed
+		if headingID == "" {
+			headingID = slugifyHeading(headingText)
+		}
+		// 5. Handle ID collisions by appending counter suffix
+		headingID = deduplicateID(headingID, headingIDSet)
+
+		headingHTML, _ := goquery.OuterHtml(s)
+
 		section := Section{
 			HeadingText:   headingText,
-			HeadingHTML:   renderHTML(h.Node),
-			HeadingLevel:  headingLevel(h.Node),
+			HeadingHTML:   headingHTML,
+			HeadingLevel:  headingLevelFromTag(goquery.NodeName(s)),
 			HeadingID:     headingID,
 			ContentHTML:   contentHTML,
-			ContentText:   strings.TrimSpace(stripTags(contentHTML)),
+			ContentText:   strings.TrimSpace(contentText),
 			AnchorTargets: anchors,
+			ContentIDs:    contentIDs,
 		}
 		sections = append(sections, section)
-	}
+	})
 
 	headingIDs := make([]string, 0, len(headingIDSet))
 	for id := range headingIDSet {
 		headingIDs = append(headingIDs, id)
 	}
 
+	htmlText, _ := doc.Html()
 	return &Document{
 		HTML:               htmlText,
 		Sections:           sections,
@@ -150,45 +142,34 @@ func Parse(htmlText string) (*Document, error) {
 	}, nil
 }
 
+var slugRegexp = regexp.MustCompile(`[^a-z0-9]+`)
+
 func slugifyHeading(text string) string {
 	text = strings.TrimSpace(strings.ToLower(text))
-	if text == "" {
+	return strings.Trim(slugRegexp.ReplaceAllString(text, "_"), "_")
+}
+
+func deduplicateID(id string, seen map[string]struct{}) string {
+	if id == "" {
 		return ""
 	}
-	var b strings.Builder
-	lastUnderscore := false
-	for _, r := range text {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			lastUnderscore = false
-			continue
-		}
-		if !lastUnderscore {
-			b.WriteRune('_')
-			lastUnderscore = true
-		}
+	if _, exists := seen[id]; !exists {
+		seen[id] = struct{}{}
+		return id
 	}
-	out := strings.Trim(b.String(), "_")
-	return out
-}
-
-func isHeadingNode(n *html.Node) bool {
-	if n.Type != html.ElementNode {
-		return false
-	}
-	switch n.Data {
-	case "h1", "h2", "h3", "h4", "h5", "h6":
-		return true
-	default:
-		return false
+	counter := 2
+	for {
+		newID := id + "_" + strconv.Itoa(counter)
+		if _, exists := seen[newID]; !exists {
+			seen[newID] = struct{}{}
+			return newID
+		}
+		counter++
 	}
 }
 
-func headingLevel(n *html.Node) int {
-	if n.Type != html.ElementNode {
-		return 0
-	}
-	switch n.Data {
+func headingLevelFromTag(tag string) int {
+	switch strings.ToLower(tag) {
 	case "h1":
 		return 1
 	case "h2":
@@ -206,105 +187,30 @@ func headingLevel(n *html.Node) int {
 	}
 }
 
-func findNextHeading(start *html.Node) *html.Node {
-	for n := nextNode(start); n != nil; n = nextNode(n) {
-		if isHeadingNode(n) {
-			return n
-		}
-	}
-	return nil
-}
+func renderSelection(sel *goquery.Selection) (string, string, []string) {
+	var htmlBuf strings.Builder
+	var textBuf strings.Builder
+	ids := []string{}
 
-func collectContentBetween(start, end *html.Node) string {
-	var buf strings.Builder
-	for n := nextNodeAfterSubtree(start); n != nil && n != end; n = nextNodeAfterSubtree(n) {
-		if isHeadingNode(n) {
-			break
+	sel.Each(func(_ int, s *goquery.Selection) {
+		if s.Is("script, style, noscript") {
+			return
 		}
-		if shouldSkipNode(n) {
-			continue
-		}
-		buf.WriteString(renderHTML(n))
-	}
-	return buf.String()
-}
 
-func shouldSkipNode(n *html.Node) bool {
-	if n.Type == html.ElementNode {
-		switch n.Data {
-		case "script", "style", "noscript":
-			return true
-		}
-	}
-	return false
-}
+		// Render HTML
+		h, _ := goquery.OuterHtml(s)
+		htmlBuf.WriteString(h)
 
-func nextNode(n *html.Node) *html.Node {
-	if n.FirstChild != nil {
-		return n.FirstChild
-	}
-	for n != nil {
-		if n.NextSibling != nil {
-			return n.NextSibling
-		}
-		n = n.Parent
-	}
-	return nil
-}
+		// Render Text
+		textBuf.WriteString(s.Text())
+		textBuf.WriteString(" ") // Ensure separation between block elements
 
-func nextNodeAfterSubtree(n *html.Node) *html.Node {
-	if n == nil {
-		return nil
-	}
-	if n.NextSibling != nil {
-		return n.NextSibling
-	}
-	for n.Parent != nil {
-		n = n.Parent
-		if n.NextSibling != nil {
-			return n.NextSibling
-		}
-	}
-	return nil
-}
+		s.Find("[id]").Each(func(_ int, node *goquery.Selection) {
+			if id, ok := node.Attr("id"); ok && id != "" {
+				ids = append(ids, id)
+			}
+		})
+	})
 
-func renderHTML(n *html.Node) string {
-	var buf bytes.Buffer
-	_ = html.Render(&buf, n)
-	return buf.String()
-}
-
-func extractText(n *html.Node) string {
-	if n == nil {
-		return ""
-	}
-	var buf strings.Builder
-	var walkText func(*html.Node)
-	walkText = func(node *html.Node) {
-		if node.Type == html.TextNode {
-			buf.WriteString(node.Data)
-		}
-		for c := node.FirstChild; c != nil; c = c.NextSibling {
-			walkText(c)
-		}
-	}
-	walkText(n)
-	return buf.String()
-}
-
-func stripTags(htmlText string) string {
-	node, err := html.Parse(strings.NewReader(htmlText))
-	if err != nil {
-		return htmlText
-	}
-	return strings.TrimSpace(extractText(node))
-}
-
-func getAttr(n *html.Node, key string) string {
-	for _, attr := range n.Attr {
-		if attr.Key == key {
-			return attr.Val
-		}
-	}
-	return ""
+	return htmlBuf.String(), textBuf.String(), ids
 }

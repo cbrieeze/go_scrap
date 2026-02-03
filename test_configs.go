@@ -25,7 +25,7 @@ func runTestConfigs(args []string) {
 		headless bool
 	)
 
-	fs.StringVar(&dir, "dir", "CONFIGS", "Directory of config JSON files")
+	fs.StringVar(&dir, "dir", "configs", "Directory of config JSON files")
 	fs.IntVar(&maxSec, "max-sections", 3, "Limit number of sections written (0 = all)")
 	fs.IntVar(&maxMenu, "max-menu-items", 5, "Limit number of menu section files written (0 = all)")
 	fs.BoolVar(&dryRun, "dry-run", true, "Dry-run (no files written)")

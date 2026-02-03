@@ -1,18 +1,13 @@
 package parse
 
-import (
-	"strings"
+import "github.com/PuerkitoBio/goquery"
 
-	"github.com/PuerkitoBio/goquery"
-)
-
-func RemoveSelectors(htmlText, selector string) (string, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlText))
-	if err != nil {
-		return "", err
+func RemoveSelectors(doc *goquery.Document, selector string) error {
+	if doc == nil {
+		return nil
 	}
 	doc.Find(selector).Each(func(_ int, s *goquery.Selection) {
 		s.Remove()
 	})
-	return doc.Html()
+	return nil
 }

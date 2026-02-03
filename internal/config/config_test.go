@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"go_scrap/internal/config"
@@ -35,41 +36,24 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("load config: %v", err)
 	}
 
-	if cfg.URL != "https://example.com" {
-		t.Fatalf("url mismatch: %s", cfg.URL)
+	headless := true
+	expected := config.Config{
+		URL:                "https://example.com",
+		Mode:               "dynamic",
+		OutputDir:          "output/test",
+		TimeoutSeconds:     42,
+		UserAgent:          "test-agent",
+		WaitForSelector:    "main",
+		Headless:           &headless,
+		NavSelector:        ".nav",
+		ContentSelector:    "main",
+		ExcludeSelector:    ".ads",
+		NavWalk:            true,
+		RateLimitPerSecond: 2.5,
 	}
-	if cfg.Mode != "dynamic" {
-		t.Fatalf("mode mismatch: %s", cfg.Mode)
-	}
-	if cfg.OutputDir != "output/test" {
-		t.Fatalf("output_dir mismatch: %s", cfg.OutputDir)
-	}
-	if cfg.TimeoutSeconds != 42 {
-		t.Fatalf("timeout mismatch: %d", cfg.TimeoutSeconds)
-	}
-	if cfg.UserAgent != "test-agent" {
-		t.Fatalf("user_agent mismatch: %s", cfg.UserAgent)
-	}
-	if cfg.WaitForSelector != "main" {
-		t.Fatalf("wait_for mismatch: %s", cfg.WaitForSelector)
-	}
-	if cfg.Headless == nil || *cfg.Headless != true {
-		t.Fatalf("headless mismatch")
-	}
-	if cfg.NavSelector != ".nav" {
-		t.Fatalf("nav_selector mismatch: %s", cfg.NavSelector)
-	}
-	if cfg.ContentSelector != "main" {
-		t.Fatalf("content_selector mismatch: %s", cfg.ContentSelector)
-	}
-	if cfg.ExcludeSelector != ".ads" {
-		t.Fatalf("exclude_selector mismatch: %s", cfg.ExcludeSelector)
-	}
-	if !cfg.NavWalk {
-		t.Fatalf("nav_walk mismatch")
-	}
-	if cfg.RateLimitPerSecond != 2.5 {
-		t.Fatalf("rate_limit_per_second mismatch: %v", cfg.RateLimitPerSecond)
+
+	if !reflect.DeepEqual(cfg, expected) {
+		t.Fatalf("config mismatch\nexpected: %#v\ngot:      %#v", expected, cfg)
 	}
 }
 

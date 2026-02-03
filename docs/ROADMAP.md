@@ -10,7 +10,7 @@ This document outlines the future development plans for `go_scrap`. The priority
    - Reason: ensures high-quality, structured content and prevents re-embedding churn.
 3) **Content Fidelity**: Anchors, Tables, Link/Asset handling (Current)
    - Reason: improves the quality of the markdown content itself.
-4) **Scale & Politeness**: Crawl queue, robots.txt, throttling, resume
+4) **Scale & Politeness**: Crawl queue, throttling, resume
    - Reason: crawling amplifies failure modes; do it after extraction/indexing are trusted.
 5) **Ecosystem & Pipelines**: Offline RAG, export bundles, observability, plugins
    - Reason: valuable add-ons once the core pipeline is solid.
@@ -37,33 +37,26 @@ This document outlines the future development plans for `go_scrap`. The priority
 
 - [x] **Anchor-only Pages**: Support anchor-only pages by mapping menu anchors to the closest heading.
 - [x] **Asset Downloading**: Add an option to download referenced images locally and rewrite Markdown links to point to the `output/` directory.
-- [ ] **Complex Table Support** (library-backed): Improve the Markdown converter to handle HTML tables with `rowspan` and `colspan` more gracefully. (e.g., `github.com/JohannesKaufmann/html-to-markdown` plugins)
-- [ ] **Conversion Hardening** (library-backed): Strengthen HTML-to-Markdown conversions (code blocks, lists, nested elements). (custom rules on `github.com/JohannesKaufmann/html-to-markdown`)
-- [ ] **Link Rewriting** (library-backed): Resolve relative links to absolute (or local if downloaded) and preserve `source_url` per section. (built-in `net/url`)
-- [ ] **Code Block Intelligence**: Detect/infer missing language tags and strip UI artifacts (e.g., "Copy" buttons).
-- [ ] **Better Errors**: Improve error messages (selectors not found, empty content, timeouts).
-- [ ] **Test Coverage**: Add unit tests for `internal/parse` and `internal/markdown` packages.
+- [x] **Complex Table Support** (library-backed): Improve the Markdown converter to handle HTML tables with `rowspan` and `colspan` more gracefully. (e.g., `github.com/JohannesKaufmann/html-to-markdown` plugins)
+- [x] **Conversion Hardening** (library-backed): Strengthen HTML-to-Markdown conversions (code blocks, lists, nested elements). (custom rules on `github.com/JohannesKaufmann/html-to-markdown`)
+- [x] **Link Rewriting** (library-backed): Resolve relative links to absolute (or local if downloaded) and preserve `source_url` per section. (built-in `net/url`)
+- [x] **Code Block Intelligence**: Detect/infer missing language tags and strip UI artifacts (e.g., "Copy" buttons).
+- [x] **Better Errors**: Improve error messages (selectors not found, empty content, timeouts).
+- [x] **Test Coverage**: Add unit tests for `internal/parse` and `internal/markdown` packages.
 
 ## Phase 4: Scale, Crawl & Politeness
 
-- [ ] **URL Queue + De-dupe** (library-backed): Implement a crawl queue with URL normalization and de-dupe. (e.g., `github.com/gocolly/colly` or `github.com/PuerkitoBio/fetchbot`)
-  - Depends on: canonical URL normalization.
-- [ ] **Canonical URL Normalization** (library-backed): Normalize scheme, host, trailing slashes, and fragments. (built-in `net/url`)
-  - Depends on: URL queue.
-- [ ] **Recursive Crawling**: Follow links within the same domain with a configurable depth (`--depth`).
-  - Depends on: URL queue + de-dupe.
+- [ ] **Crawl Engine Integration (Colly)**: Adopt `github.com/gocolly/colly` to handle the crawl lifecycle (queue, de-dupe, recursion).
+  - Replaces manual fetch/loop logic.
+- [ ] **Politeness Configuration**: Implement `colly` LimitRules for rate limiting and enable `robots.txt` support.
+  - Depends on: Crawl Engine.
 - [ ] **Sitemap Ingestion** (library-backed): Allow passing a `sitemap.xml` URL to batch scrape all pages on a site. (e.g., `github.com/oxffaa/gopher-parse-sitemap` or `encoding/xml`)
-  - Depends on: URL queue + canonicalization.
-- [ ] **Robots.txt Compliance** (library-backed): Respect `robots.txt` and provide an override flag. (e.g., `golang.org/x/robotstxt` or `github.com/temoto/robotstxt`)
-  - Depends on: URL queue.
-- [ ] **Rate Limiting / AutoThrottle** (library-backed): Polite delays and adaptive throttling under load. (e.g., `golang.org/x/time/rate`)
-  - Depends on: URL queue + request metrics.
+  - Depends on: Crawl Engine.
 - [ ] **Resume / Incremental Sync** (library-backed): Update existing outputs based on last-fetch timestamps or content hashes. (e.g., SQLite + hashes)
   - Depends on: stable IDs + output index.
-- [ ] **Authentication** (library-backed): Support custom headers or cookies for scraping behind logins. (cookie jars in `net/http`)
-- [ ] **Proxy Support** (library-backed): Add support for HTTP/SOCKS proxies (`--proxy`). (transport config in `net/http`)
+- [ ] **Advanced Network Config**: Expose `colly` options for Proxies (`--proxy`) and Authentication (headers/cookies).
 - [ ] **Crawl Index**: Generate a crawl index file to summarize pages and section counts.
-  - Depends on: URL queue.
+  - Depends on: Crawl Engine.
 
 ## Phase 5: Ecosystem & Pipelines
 

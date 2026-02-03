@@ -26,25 +26,43 @@ func TestSectionToMarkdown(t *testing.T) {
 			name:         "Complex Table",
 			headingText:  "Data",
 			headingLevel: 2,
-			htmlContent:  `<table><tr><th>ID</th><th>Value</th></tr><tr><td>1</td><td>A</td></tr></table>`,
+			htmlContent:  `<table><tr><th rowspan="2">A</th><th>B</th></tr><tr><td>C</td></tr></table>`,
 			// Spacing/padding is not guaranteed; assert row/column order only.
-			wantContains: []string{"## Data", "| ID | Value |", "| 1 | A |"},
+			wantContains: []string{"## Data", "| A | B |", "| A | C |"},
 		},
 		{
 			name:         "Links and Code",
 			headingText:  "API",
 			headingLevel: 3,
-			htmlContent:  `<p>Check <a href="/docs">docs</a> and <code>code</code>.</p>`,
+			htmlContent:  `<p>Check <a href="/docs">relative</a>, <a href="https://example.com/abs">absolute</a>, <a href="#anchor">anchor</a> and <code>code</code>.</p>`,
 			// Links should be preserved as Markdown links.
-			wantContains: []string{"### API", "Check [docs](/docs) and `code`."},
+			wantContains: []string{"### API", "relative", "absolute", "anchor", "`code`"},
 		},
 		{
 			name:         "Fenced Code Block With Language",
 			headingText:  "Example",
 			headingLevel: 2,
-			htmlContent: `<pre><code class="language-go">fmt.Println("hi")
+			htmlContent: `<pre><button>Copy</button><code class="language-go">fmt.Println("hi")
 </code></pre>`,
 			wantContains: []string{"## Example", "```go", "fmt.Println(\"hi\")", "```"},
+		},
+		{
+			name:         "Admonition Blockquote",
+			headingText:  "Notes",
+			headingLevel: 2,
+			htmlContent:  `<div class="note"><p>This is a note.</p></div>`,
+			wantContains: []string{"## Notes", "> **Note**", "> This is a note."},
+		},
+		{
+			name:         "Description List",
+			headingText:  "Defs",
+			headingLevel: 2,
+			htmlContent: `
+				<dl>
+				  <dt>Term 1</dt><dd>Definition 1</dd>
+				  <dt>Term 2</dt><dd>Definition 2</dd>
+				</dl>`,
+			wantContains: []string{"## Defs", "**Term 1**", ": Definition 1", "**Term 2**", ": Definition 2"},
 		},
 		{
 			name:         "Empty Content",
