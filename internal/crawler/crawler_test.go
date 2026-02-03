@@ -42,7 +42,7 @@ func TestNew_InvalidBaseURL(t *testing.T) {
 }
 
 func TestCrawl_SinglePage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1>Test Page</h1></body></html>`))
 	}))
@@ -94,11 +94,11 @@ func TestCrawl_SinglePage(t *testing.T) {
 
 func TestCrawl_FollowsLinks(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1>Home</h1><a href="/page2">Page 2</a></body></html>`))
 	})
-	mux.HandleFunc("/page2", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/page2", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1>Page 2</h1></body></html>`))
 	})
@@ -137,7 +137,7 @@ func TestCrawl_FollowsLinks(t *testing.T) {
 
 func TestCrawl_RespectsMaxPages(t *testing.T) {
 	requestCount := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		w.Header().Set("Content-Type", "text/html")
 		// Return links to many pages

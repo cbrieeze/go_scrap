@@ -71,7 +71,9 @@ func (l *playwrightLocatorAdapter) WaitFor(opts playwright.LocatorWaitForOptions
 	return l.locator.WaitFor(opts)
 }
 
-func FetchAnchorHTML(ctx context.Context, opts Options, anchors []string) (map[string]string, error) {
+var openPageFn = openPage
+
+func AnchorHTML(ctx context.Context, opts Options, anchors []string) (map[string]string, error) {
 	if err := normalizeAnchorOptions(&opts); err != nil {
 		return nil, err
 	}
@@ -85,18 +87,17 @@ func FetchAnchorHTML(ctx context.Context, opts Options, anchors []string) (map[s
 		return nil, err
 	}
 
-	page, closeAll, err := openPage(opts)
+	page, closeAll, err := openPageFn(opts)
 	if err != nil {
 		return nil, err
 	}
 	defer closeAll()
 
-	adapter := &playwrightPageAdapter{page: page}
-	if err := gotoAndWait(adapter, baseURL, opts); err != nil {
+	if err := gotoAndWait(page, baseURL, opts); err != nil {
 		return nil, err
 	}
 
-	return fetchAnchorContentWithPage(adapter, baseURL, opts, anchors)
+	return fetchAnchorContentWithPage(page, baseURL, opts, anchors)
 }
 
 func normalizeAnchorBase(rawURL string) (string, error) {
@@ -121,7 +122,7 @@ func normalizeAnchorOptions(opts *Options) error {
 	return nil
 }
 
-func openPage(opts Options) (playwright.Page, func(), error) {
+func openPage(opts Options) (navPage, func(), error) {
 	browser, err := ensureBrowser(opts)
 	if err != nil {
 		return nil, func() {}, err
@@ -137,7 +138,7 @@ func openPage(opts Options) (playwright.Page, func(), error) {
 	closeAll := func() {
 		_ = page.Close()
 	}
-	return page, closeAll, nil
+	return &playwrightPageAdapter{page: page}, closeAll, nil
 }
 
 var browserManager struct {

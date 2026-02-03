@@ -4,6 +4,7 @@ run:
 linters:
   enable:
     - staticcheck
+    - stylecheck
     - gosimple
     - unused
     - errcheck
@@ -12,6 +13,7 @@ linters:
     - gocyclo
     - misspell
     - gofmt
+    - revive
 
 linters-settings:
   gocyclo:
@@ -19,3 +21,7 @@ linters-settings:
   gosec:
     excludes:
       - G304 # Expect file inclusion via variables (CLI tools)
+  revive:
+    config: revive.toml
+  stylecheck:
+    checks: ["all"]

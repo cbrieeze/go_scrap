@@ -18,7 +18,7 @@ func TestParseSitemap_BasicURLSet(t *testing.T) {
   <url><loc>https://example.com/page3</loc></url>
 </urlset>`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(sitemap))
 	}))
@@ -62,7 +62,7 @@ func TestParseSitemap_SitemapIndex(t *testing.T) {
 	})
 
 	// Child sitemaps
-	mux.HandleFunc("/sitemap1.xml", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sitemap1.xml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -70,7 +70,7 @@ func TestParseSitemap_SitemapIndex(t *testing.T) {
 </urlset>`))
 	})
 
-	mux.HandleFunc("/sitemap2.xml", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sitemap2.xml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -102,7 +102,7 @@ func TestParseSitemap_EmptyURLs(t *testing.T) {
   <url><loc></loc></url>
 </urlset>`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(sitemap))
 	}))
@@ -126,7 +126,7 @@ func TestParseSitemap_EmptyURLs(t *testing.T) {
 }
 
 func TestParseSitemap_404(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()

@@ -47,12 +47,13 @@ func TestWriteConfig(t *testing.T) {
 		userAgent:       "ua",
 		waitFor:         "body",
 		headless:        true,
-		runNow:          true,
 		yes:             true,
 		configPath:      path,
-		saveConfig:      true,
+		finalAction:     "save_only",
 		maxSectionsStr:  "0",
 		maxMenuItemsStr: "0",
+		maxPagesStr:     "0",
+		crawlDepthStr:   "0",
 	})
 	if err != nil {
 		t.Fatalf("buildResult error: %v", err)

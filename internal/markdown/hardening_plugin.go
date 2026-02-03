@@ -10,11 +10,11 @@ import (
 // HardeningPlugin improves conversion for common documentation patterns
 // like admonitions and description lists.
 func HardeningPlugin() md.Plugin {
-	return func(conv *md.Converter) []md.Rule {
+	return func(_ *md.Converter) []md.Rule {
 		return []md.Rule{
 			{
 				Filter: []string{"div", "aside"},
-				Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
+				Replacement: func(content string, selec *goquery.Selection, _ *md.Options) *string {
 					classes := strings.ToLower(selec.AttrOr("class", ""))
 
 					title := ""
@@ -53,14 +53,14 @@ func HardeningPlugin() md.Plugin {
 			},
 			{
 				Filter: []string{"dt"},
-				Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
+				Replacement: func(content string, _ *goquery.Selection, _ *md.Options) *string {
 					res := "\n**" + strings.TrimSpace(content) + "**\n"
 					return &res
 				},
 			},
 			{
 				Filter: []string{"dd"},
-				Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
+				Replacement: func(content string, _ *goquery.Selection, _ *md.Options) *string {
 					res := ": " + strings.TrimSpace(content) + "\n"
 					return &res
 				},

@@ -15,7 +15,7 @@ import (
 )
 
 func TestRun_StaticHTML_NoSelectors(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1 id="h">Title</h1><p>Body</p></body></html>`))
 	}))
@@ -53,7 +53,7 @@ func TestRun_WithContentSelector(t *testing.T) {
 		<footer>Footer</footer>
 	</body></html>`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(html))
 	}))
@@ -94,7 +94,7 @@ func TestRun_WithNavSelector(t *testing.T) {
 		</main>
 	</body></html>`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(html))
 	}))
@@ -130,7 +130,7 @@ func TestRun_WithNavSelector(t *testing.T) {
 func TestRun_DryRunNoFilesWritten(t *testing.T) {
 	html := `<html><body><h1 id="title">Title</h1><p>Body</p></body></html>`
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(html))
 	}))

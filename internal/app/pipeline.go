@@ -56,7 +56,7 @@ func (p *pipeline) analyze(ctx context.Context, opts Options, baseDoc *goquery.D
 	return analysisResult{Doc: doc, Rep: report.Analyze(doc)}, nil
 }
 
-func (p *pipeline) prepareDocument(ctx context.Context, opts Options, html string) (*goquery.Document, error) {
+func (p *pipeline) prepareDocument(_ context.Context, opts Options, html string) (*goquery.Document, error) {
 	doc, err := parse.NewDocument(html)
 	if err != nil {
 		return nil, err

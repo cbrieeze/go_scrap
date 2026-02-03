@@ -228,48 +228,48 @@ func isValidLink(link string) bool {
 		!strings.HasPrefix(link, "mailto:")
 }
 
-func (c *Crawler) Crawl(ctx context.Context) (map[string]*Result, Stats, error) {
-	c.mu.Lock()
-	c.urlCount = 1 // Start URL counts as 1
-	c.mu.Unlock()
+func (cr *Crawler) Crawl(ctx context.Context) (map[string]*Result, Stats, error) {
+	cr.mu.Lock()
+	cr.urlCount = 1 // Start URL counts as 1
+	cr.mu.Unlock()
 
-	if err := c.collector.Visit(c.opts.BaseURL); err != nil {
-		return nil, c.stats, fmt.Errorf("failed to start crawl: %w", err)
+	if err := cr.collector.Visit(cr.opts.BaseURL); err != nil {
+		return nil, cr.stats, fmt.Errorf("failed to start crawl: %w", err)
 	}
 
 	// Wait for all requests to complete
 	done := make(chan struct{})
 	go func() {
-		c.collector.Wait()
+		cr.collector.Wait()
 		close(done)
 	}()
 
 	select {
 	case <-ctx.Done():
-		return c.results, c.stats, ctx.Err()
+		return cr.results, cr.stats, ctx.Err()
 	case <-done:
 		// Crawl completed normally
 	}
 
-	c.stats.CompletedAt = time.Now()
-	return c.results, c.stats, nil
+	cr.stats.CompletedAt = time.Now()
+	return cr.results, cr.stats, nil
 }
 
-func (c *Crawler) AddURL(url string) error {
-	c.mu.Lock()
-	if c.urlCount >= c.opts.MaxPages {
-		c.mu.Unlock()
+func (cr *Crawler) AddURL(url string) error {
+	cr.mu.Lock()
+	if cr.urlCount >= cr.opts.MaxPages {
+		cr.mu.Unlock()
 		return fmt.Errorf("max pages limit reached")
 	}
-	c.urlCount++
-	c.mu.Unlock()
+	cr.urlCount++
+	cr.mu.Unlock()
 
-	return c.collector.Visit(url)
+	return cr.collector.Visit(url)
 }
 
-func (c *Crawler) AddURLs(urls []string) error {
+func (cr *Crawler) AddURLs(urls []string) error {
 	for _, u := range urls {
-		if err := c.AddURL(u); err != nil {
+		if err := cr.AddURL(u); err != nil {
 			return err
 		}
 	}

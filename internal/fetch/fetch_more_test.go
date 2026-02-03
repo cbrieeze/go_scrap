@@ -42,4 +42,12 @@ func TestWaitForRateLimit(t *testing.T) {
 			t.Fatal("expected error")
 		}
 	})
+
+	t.Run("HighRate", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := waitForRateLimit(ctx, 1e12); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }

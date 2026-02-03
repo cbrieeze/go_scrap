@@ -15,7 +15,7 @@ func TablePlugin() md.Plugin {
 	return func(conv *md.Converter) []md.Rule {
 		return []md.Rule{{
 			Filter: []string{"table"},
-			Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
+			Replacement: func(_ string, selec *goquery.Selection, _ *md.Options) *string {
 				grid, ok := buildTableGrid(conv, selec)
 				if !ok {
 					return nil

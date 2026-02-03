@@ -447,7 +447,7 @@ func runNavWalk(ctx context.Context, opts Options, baseDoc *goquery.Document) (*
 	items := flattenMenu(nodes)
 	anchors := collectAnchors(items)
 
-	htmlByAnchor, err := fetch.FetchAnchorHTML(ctx, fetch.Options{
+	htmlByAnchor, err := fetch.AnchorHTML(ctx, fetch.Options{
 		URL:                opts.URL,
 		Mode:               fetch.ModeDynamic,
 		Timeout:            opts.Timeout,
@@ -706,9 +706,9 @@ func printList(items []string) {
 	}
 }
 
-func trimSections(doc *parse.Document, max int) {
-	if max > 0 && max < len(doc.Sections) {
-		doc.Sections = doc.Sections[:max]
+func trimSections(doc *parse.Document, maxSections int) {
+	if maxSections > 0 && maxSections < len(doc.Sections) {
+		doc.Sections = doc.Sections[:maxSections]
 	}
 }
 
@@ -755,7 +755,7 @@ func buildMarkdown(conv *markdown.Converter, sections []parse.Section) (string, 
 	return mdBuilder.String(), parts, nil
 }
 
-func writeMenuOutputs(opts Options, baseDoc *goquery.Document, doc *parse.Document, sections []sectionMarkdown) error {
+func writeMenuOutputs(opts Options, baseDoc *goquery.Document, _ *parse.Document, sections []sectionMarkdown) error {
 	if strings.TrimSpace(opts.NavSelector) == "" {
 		return nil
 	}

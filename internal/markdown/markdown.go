@@ -45,7 +45,7 @@ func (c *Converter) SectionToMarkdown(headingText string, headingLevel int, cont
 func codeBlockRule() htmltomd.Rule {
 	return htmltomd.Rule{
 		Filter: []string{"pre"},
-		Replacement: func(content string, selec *goquery.Selection, options *htmltomd.Options) *string {
+		Replacement: func(_ string, selec *goquery.Selection, _ *htmltomd.Options) *string {
 			if selec == nil {
 				empty := ""
 				return &empty

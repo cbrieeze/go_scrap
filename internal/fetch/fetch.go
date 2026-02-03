@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/playwright-community/playwright-go"
 )
 
 type Mode string
@@ -36,6 +34,9 @@ type Result struct {
 	SourceInfo string
 }
 
+var staticFetch = fetchStatic
+var dynamicFetch = fetchDynamic
+
 func Fetch(ctx context.Context, opts Options) (Result, error) {
 	if opts.URL == "" {
 		return Result{}, errors.New("url is required")
@@ -49,23 +50,23 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 
 	switch opts.Mode {
 	case ModeStatic:
-		html, err := fetchStatic(ctx, opts)
+		html, err := staticFetch(ctx, opts)
 		if err != nil {
 			return Result{}, err
 		}
 		return Result{HTML: html, FinalMode: ModeStatic, SourceInfo: "static"}, nil
 	case ModeDynamic:
-		html, err := fetchDynamic(ctx, opts)
+		html, err := dynamicFetch(ctx, opts)
 		if err != nil {
 			return Result{}, err
 		}
 		return Result{HTML: html, FinalMode: ModeDynamic, SourceInfo: "dynamic"}, nil
 	case ModeAuto:
-		html, err := fetchStatic(ctx, opts)
+		html, err := staticFetch(ctx, opts)
 		if err == nil && !looksDynamic(html) {
 			return Result{HTML: html, FinalMode: ModeStatic, SourceInfo: "auto:static"}, nil
 		}
-		html, derr := fetchDynamic(ctx, opts)
+		html, derr := dynamicFetch(ctx, opts)
 		if derr != nil {
 			if err != nil {
 				return Result{}, fmt.Errorf("static failed: %v; dynamic failed: %w", err, derr)
@@ -106,64 +107,6 @@ func fetchStatic(ctx context.Context, opts Options) (string, error) {
 		return "", err
 	}
 	return string(body), nil
-}
-
-func fetchDynamic(ctx context.Context, opts Options) (string, error) {
-	if err := waitForRateLimit(ctx, opts.RateLimitPerSecond); err != nil {
-		return "", err
-	}
-
-	if err := playwright.Install(&playwright.RunOptions{}); err != nil {
-		return "", fmt.Errorf("install playwright: %w", err)
-	}
-	pw, err := playwright.Run()
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		_ = pw.Stop()
-	}()
-
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(opts.Headless),
-	})
-	if err != nil {
-		return "", err
-	}
-	defer browser.Close()
-
-	page, err := browser.NewPage(playwright.BrowserNewPageOptions{
-		UserAgent: playwright.String(opts.UserAgent),
-	})
-	if err != nil {
-		return "", err
-	}
-	defer page.Close()
-
-	_, err = page.Goto(opts.URL, playwright.PageGotoOptions{
-		Timeout:   playwright.Float(float64(opts.Timeout.Milliseconds())),
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	})
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return "", fmt.Errorf("dynamic fetch timed out after %s (try --timeout or --wait-for)", opts.Timeout)
-		}
-		return "", err
-	}
-	if opts.WaitForSelector != "" {
-		loc := page.Locator(opts.WaitForSelector)
-		if err := loc.WaitFor(playwright.LocatorWaitForOptions{
-			Timeout: playwright.Float(float64(opts.Timeout.Milliseconds())),
-		}); err != nil {
-			return "", fmt.Errorf("wait-for selector timed out: %s", opts.WaitForSelector)
-		}
-	}
-
-	html, err := page.Content()
-	if err != nil {
-		return "", err
-	}
-	return html, nil
 }
 
 func waitForRateLimit(ctx context.Context, ratePerSecond float64) error {
