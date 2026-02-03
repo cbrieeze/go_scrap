@@ -28,6 +28,7 @@ Thumbs.db
 
 # Outputs
 output/
+!internal/output/
 
 # Logs
 *.log
