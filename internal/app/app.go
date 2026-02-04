@@ -226,16 +226,18 @@ func processCrawlResults(ctx context.Context, opts Options, results map[string]*
 		if resumeEntry, ok := resumeEntries[pageURL]; ok && shouldResumeSkip(opts, result, resumeEntry) {
 			pageDir, dirErr := urlToOutputDir(pageURL, pagesDir)
 			if dirErr == nil {
-				if resumeEntry.Status == "success" {
-					pageSections = append(pageSections, output.PageSectionCount{
-						URL:      pageURL,
-						Sections: resumeEntry.SectionCount,
-					})
+				if _, err := os.Stat(pageDir); err == nil {
+					if resumeEntry.Status == "success" {
+						pageSections = append(pageSections, output.PageSectionCount{
+							URL:      pageURL,
+							Sections: resumeEntry.SectionCount,
+						})
+					}
+					if !opts.Stdout {
+						fmt.Printf("Skipped (unchanged): %s\n", pageDir)
+					}
+					continue
 				}
-				if !opts.Stdout {
-					fmt.Printf("Skipped (unchanged): %s\n", pageDir)
-				}
-				continue
 			}
 		}
 
