@@ -1,7 +1,7 @@
 {
   "url": "https://api.freshservice.com/",
   "mode": "dynamic",
-  "output_dir": "output/freshservice",
+  "output_dir": "artifacts/freshservice",
   "timeout_seconds": 60,
   "user_agent": "go_scrap/1.0",
   "wait_for": "body",

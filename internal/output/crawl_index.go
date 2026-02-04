@@ -32,7 +32,7 @@ func WriteCrawlIndexFromPages(outputDir string, results map[string]*crawler.Resu
 
 func WriteCrawlIndex(outputDir string, index crawler.CrawlIndex, silent bool) error {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -58,7 +58,7 @@ func WriteCrawlIndex(outputDir string, index crawler.CrawlIndex, silent bool) er
 
 func ReadCrawlIndex(outputDir string) (crawler.CrawlIndex, error) {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	indexPath := filepath.Join(outputDir, "crawl-index.json")
 	data, err := os.ReadFile(indexPath)

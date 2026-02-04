@@ -14,7 +14,8 @@ import (
 )
 
 type pipeline struct {
-	conv *markdown.Converter
+	conv  *markdown.Converter
+	hooks []Hook
 }
 
 type analysisResult struct {
@@ -36,8 +37,12 @@ func (r analysisResult) SectionsCount() int {
 	return len(r.Doc.Sections)
 }
 
-func newPipeline() *pipeline {
-	return &pipeline{conv: markdown.NewConverter()}
+func newPipeline(opts Options) (*pipeline, error) {
+	hooks, err := buildHooks(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &pipeline{conv: markdown.NewConverter(), hooks: hooks}, nil
 }
 
 func (p *pipeline) analyze(ctx context.Context, opts Options, baseDoc *goquery.Document, allowNavWalk bool) (analysisResult, error) {
@@ -74,12 +79,30 @@ func (p *pipeline) renderSections(sections []parse.Section) (string, []sectionMa
 	return buildMarkdown(p.conv, sections)
 }
 
-func (p *pipeline) writeOutputs(opts Options, baseDoc *goquery.Document, result analysisResult) error {
+func (p *pipeline) writeOutputs(ctx context.Context, opts Options, baseDoc *goquery.Document, result analysisResult) error {
+	if err := p.runBeforeRenderHooks(ctx, opts, result.Doc, &result.Rep); err != nil {
+		return err
+	}
+
 	md, sectionMarkdowns, err := p.renderSections(result.Doc.Sections)
 	if err != nil {
 		return err
 	}
-	return writeOutputsWithMarkdown(opts, baseDoc, result, md, sectionMarkdowns)
+
+	rendered := Rendered{
+		Markdown: md,
+		Sections: toRenderedSections(sectionMarkdowns),
+	}
+	if err := p.runAfterRenderHooks(ctx, opts, result.Doc, &result.Rep, &rendered); err != nil {
+		return err
+	}
+	md, sectionMarkdowns = fromRendered(rendered)
+
+	writeRes, err := writeOutputsWithMarkdown(opts, baseDoc, result, md, sectionMarkdowns)
+	if err != nil {
+		return err
+	}
+	return p.runAfterWriteHooks(ctx, opts, result.Doc, &result.Rep, rendered, writeRes)
 }
 
 type crawlPageSummary struct {
@@ -127,7 +150,7 @@ func (p *pipeline) processCrawlPage(ctx context.Context, opts Options, pageURL s
 	analysis.Trim(opts.MaxSections)
 	summary.Sections = analysis.SectionsCount()
 
-	if err := p.writeOutputs(pageOpts, baseDoc, analysis); err != nil {
+	if err := p.writeOutputs(ctx, pageOpts, baseDoc, analysis); err != nil {
 		summary.ProcessError = err
 		return summary
 	}

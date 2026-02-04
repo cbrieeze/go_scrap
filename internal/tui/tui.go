@@ -120,70 +120,108 @@ func manageConfigs(state *formState) error {
 }
 
 func listConfigFiles() ([]string, error) {
-	files, err := filepath.Glob("*.json")
-	if err != nil {
-		return nil, err
+	var files []string
+	seen := map[string]struct{}{}
+	for _, dir := range config.SearchDirs() {
+		matches, err := filepath.Glob(filepath.Join(dir, "*.json"))
+		if err != nil {
+			return nil, err
+		}
+		for _, match := range matches {
+			key := strings.ToLower(filepath.Clean(match))
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			files = append(files, match)
+		}
 	}
-	nested, err := filepath.Glob(filepath.Join("configs", "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	return append(files, nested...), nil
+	return files, nil
 }
 
 func executeConfigAction(action, selectedFile string, state *formState) (bool, error) {
 	switch action {
 	case "load":
-		data, err := os.ReadFile(selectedFile)
-		if err != nil {
-			return false, fmt.Errorf("failed to read %s: %w", selectedFile, err)
-		}
-		var cfg config.Config
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return false, fmt.Errorf("failed to parse %s: %w", selectedFile, err)
-		}
-		state.fromConfig(cfg)
-		state.configPath = selectedFile
-		return true, nil // Exit loop
+		return loadConfigAction(selectedFile, state)
 
 	case "rename":
-		var newName string
-		if err := huh.NewInput().Title("New filename").Value(&newName).Validate(validateNewFilename).Run(); err != nil {
-			return false, err
-		}
-		newName = ensureJSONExtension(newName)
-		if err := os.Rename(selectedFile, newName); err != nil {
-			return false, fmt.Errorf("failed to rename: %w", err)
-		}
+		return false, renameConfigAction(selectedFile)
 
 	case "clone":
-		var newName string
-		if err := huh.NewInput().Title("Clone as").Value(&newName).Validate(validateNewFilename).Run(); err != nil {
-			return false, err
-		}
-		newName = ensureJSONExtension(newName)
-		data, err := os.ReadFile(selectedFile)
-		if err != nil {
-			return false, fmt.Errorf("failed to read %s: %w", selectedFile, err)
-		}
-		if err := os.WriteFile(newName, data, 0600); err != nil {
-			return false, fmt.Errorf("failed to write %s: %w", newName, err)
-		}
+		return false, cloneConfigAction(selectedFile)
 
 	case "delete":
-		var confirmDelete bool
-		if err := huh.NewConfirm().Title(fmt.Sprintf("Really delete %s?", selectedFile)).Affirmative("Yes, delete it.").Negative("No, keep it.").Value(&confirmDelete).Run(); err != nil {
-			return false, err
-		}
-		if confirmDelete {
-			if err := os.Remove(selectedFile); err != nil {
-				return false, fmt.Errorf("failed to delete %s: %w", selectedFile, err)
-			}
-		}
+		return false, deleteConfigAction(selectedFile)
 	}
 
 	// For rename, clone, delete, back -> continue loop
 	return false, nil
+}
+
+func loadConfigAction(selectedFile string, state *formState) (bool, error) {
+	data, err := os.ReadFile(selectedFile)
+	if err != nil {
+		return false, fmt.Errorf("failed to read %s: %w", selectedFile, err)
+	}
+	var cfg config.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return false, fmt.Errorf("failed to parse %s: %w", selectedFile, err)
+	}
+	state.fromConfig(cfg)
+	state.configPath = selectedFile
+	return true, nil
+}
+
+func renameConfigAction(selectedFile string) error {
+	newName, err := promptConfigTarget("New filename", selectedFile)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(selectedFile, newName); err != nil {
+		return fmt.Errorf("failed to rename: %w", err)
+	}
+	return nil
+}
+
+func cloneConfigAction(selectedFile string) error {
+	newName, err := promptConfigTarget("Clone as", selectedFile)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(selectedFile)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", selectedFile, err)
+	}
+	if err := os.WriteFile(newName, data, 0600); err != nil {
+		return fmt.Errorf("failed to write %s: %w", newName, err)
+	}
+	return nil
+}
+
+func deleteConfigAction(selectedFile string) error {
+	var confirmDelete bool
+	if err := huh.NewConfirm().Title(fmt.Sprintf("Really delete %s?", selectedFile)).Affirmative("Yes, delete it.").Negative("No, keep it.").Value(&confirmDelete).Run(); err != nil {
+		return err
+	}
+	if !confirmDelete {
+		return nil
+	}
+	if err := os.Remove(selectedFile); err != nil {
+		return fmt.Errorf("failed to delete %s: %w", selectedFile, err)
+	}
+	return nil
+}
+
+func promptConfigTarget(promptTitle, selectedFile string) (string, error) {
+	var newName string
+	if err := huh.NewInput().Title(promptTitle).Value(&newName).Validate(validateNewFilename).Run(); err != nil {
+		return "", err
+	}
+	newName = resolveConfigTarget(selectedFile, newName)
+	if _, err := os.Stat(newName); err == nil {
+		return "", errors.New("file already exists")
+	}
+	return newName, nil
 }
 
 type formState struct {
@@ -210,20 +248,22 @@ type formState struct {
 	sitemapURL      string
 	maxPagesStr     string
 	crawlDepthStr   string
+	pipelineHooks   []string
+	postCommands    string
 }
 
 func newFormState() *formState {
 	return &formState{
 		mode:            "dynamic",
-		timeoutSecStr:   "60",
+		timeoutSecStr:   strconv.Itoa(app.DefaultTimeoutSeconds),
 		rateLimitStr:    "0",
-		userAgent:       "go_scrap/1.0",
+		userAgent:       app.DefaultUserAgent,
 		waitFor:         "body",
 		headless:        true,
 		yes:             true,
 		maxSectionsStr:  "0",
 		maxMenuItemsStr: "0",
-		configPath:      "config.json",
+		configPath:      config.DefaultConfigPath(),
 		finalAction:     "run",
 		maxPagesStr:     "100",
 		crawlDepthStr:   "2",
@@ -231,6 +271,13 @@ func newFormState() *formState {
 }
 
 func (s *formState) fromConfig(cfg config.Config) {
+	s.applyMainConfig(cfg)
+	s.applySelectorConfig(cfg)
+	s.applyCrawlConfig(cfg)
+	s.applyPipelineConfig(cfg)
+}
+
+func (s *formState) applyMainConfig(cfg config.Config) {
 	if cfg.URL != "" {
 		s.urlStr = cfg.URL
 	}
@@ -255,6 +302,11 @@ func (s *formState) fromConfig(cfg config.Config) {
 	if cfg.OutputDir != "" {
 		s.outputDir = cfg.OutputDir
 	}
+	s.navWalk = cfg.NavWalk
+	s.crawl = cfg.Crawl
+}
+
+func (s *formState) applySelectorConfig(cfg config.Config) {
 	if cfg.NavSelector != "" {
 		s.navSel = cfg.NavSelector
 	}
@@ -264,8 +316,9 @@ func (s *formState) fromConfig(cfg config.Config) {
 	if cfg.ExcludeSelector != "" {
 		s.excludeSel = cfg.ExcludeSelector
 	}
-	s.navWalk = cfg.NavWalk
-	s.crawl = cfg.Crawl
+}
+
+func (s *formState) applyCrawlConfig(cfg config.Config) {
 	if cfg.SitemapURL != "" {
 		s.sitemapURL = cfg.SitemapURL
 	}
@@ -277,6 +330,15 @@ func (s *formState) fromConfig(cfg config.Config) {
 	}
 }
 
+func (s *formState) applyPipelineConfig(cfg config.Config) {
+	if len(cfg.PipelineHooks) > 0 {
+		s.pipelineHooks = append([]string(nil), cfg.PipelineHooks...)
+	}
+	if len(cfg.PostCommands) > 0 {
+		s.postCommands = strings.Join(cfg.PostCommands, "\n")
+	}
+}
+
 func buildForm(state *formState) *huh.Form {
 	return huh.NewForm(
 		buildTargetGroup(state),
@@ -284,6 +346,7 @@ func buildForm(state *formState) *huh.Form {
 		buildExtractionGroup(state),
 		buildNetworkGroup(state),
 		buildOutputGroup(state),
+		buildPipelineGroup(state),
 		buildExecutionGroup(state),
 		buildFinishGroup(state),
 	)
@@ -339,12 +402,30 @@ func buildNetworkGroup(state *formState) *huh.Group {
 
 func buildOutputGroup(state *formState) *huh.Group {
 	return huh.NewGroup(
-		huh.NewInput().Title("Output dir").Description("Optional: defaults to output/<host>").Placeholder("output/<host>").Value(&state.outputDir),
+		huh.NewInput().Title("Output dir").Description("Optional: defaults to artifacts/<host>").Placeholder("artifacts/<host>").Value(&state.outputDir),
 		huh.NewInput().Title("Max sections (0=all)").Value(&state.maxSectionsStr).
 			Validate(validateIntString(0, 1000000)),
 		huh.NewInput().Title("Max menu items (0=all)").Value(&state.maxMenuItemsStr).
 			Validate(validateIntString(0, 1000000)),
 	).Title("Output Limits")
+}
+
+func buildPipelineGroup(state *formState) *huh.Group {
+	return huh.NewGroup(
+		huh.NewMultiSelect[string]().
+			Title("Pipeline hooks").
+			Description("Optional post-processing steps to run.").
+			Options(
+				huh.NewOption("strict-report", "strict-report"),
+				huh.NewOption("exec", "exec"),
+			).
+			Value(&state.pipelineHooks),
+		huh.NewText().
+			Title("Post commands").
+			Description("Commands run after writing outputs (one per line). Used by the exec hook.").
+			Placeholder("echo done").
+			Value(&state.postCommands),
+	).Title("Pipeline")
 }
 
 func buildExecutionGroup(state *formState) *huh.Group {
@@ -370,7 +451,7 @@ func buildFinishGroup(state *formState) *huh.Group {
 				if !isSaveAction {
 					return nil
 				}
-				return validateNewFilename(s)
+				return validateConfigPath(s)
 			}),
 	).Title("Finish")
 }
@@ -400,6 +481,7 @@ func buildResult(state *formState) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	postCommands := splitNonEmptyLines(state.postCommands)
 
 	cfg := config.Config{
 		URL:                strings.TrimSpace(state.urlStr),
@@ -418,6 +500,8 @@ func buildResult(state *formState) (Result, error) {
 		SitemapURL:         strings.TrimSpace(state.sitemapURL),
 		MaxPages:           maxPages,
 		CrawlDepth:         crawlDepth,
+		PipelineHooks:      append([]string(nil), state.pipelineHooks...),
+		PostCommands:       postCommands,
 	}
 
 	opts := app.Options{
@@ -442,6 +526,8 @@ func buildResult(state *formState) (Result, error) {
 		SitemapURL:         strings.TrimSpace(state.sitemapURL),
 		MaxPages:           maxPages,
 		CrawlDepth:         crawlDepth,
+		PipelineHooks:      append([]string(nil), state.pipelineHooks...),
+		PostCommands:       postCommands,
 	}
 
 	res := Result{
@@ -461,6 +547,7 @@ func buildResult(state *formState) (Result, error) {
 	}
 
 	if res.SaveConfig {
+		state.configPath = ensureJSONExtension(strings.TrimSpace(state.configPath))
 		if err := writeConfig(state.configPath, cfg); err != nil {
 			return Result{}, err
 		}
@@ -474,7 +561,21 @@ func writeConfig(path string, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	dir := filepath.Dir(path)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
 	return os.WriteFile(path, data, 0600)
+}
+
+func resolveConfigTarget(currentPath, newName string) string {
+	newName = ensureJSONExtension(strings.TrimSpace(newName))
+	if filepath.IsAbs(newName) || strings.Contains(newName, string(filepath.Separator)) || strings.Contains(newName, "/") {
+		return newName
+	}
+	return filepath.Join(filepath.Dir(currentPath), newName)
 }
 
 func parsePositiveInt(s, errMsg string) (int, error) {
@@ -516,6 +617,19 @@ func parseFloat(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
+func splitNonEmptyLines(s string) []string {
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
 func validateIntString(minVal, maxVal int) func(string) error {
 	return func(s string) error {
 		v, err := parseInt(s)
@@ -537,9 +651,13 @@ func validateNewFilename(s string) error {
 	if strings.ContainsAny(s, `/\:*?"<>|`) {
 		return errors.New("invalid characters")
 	}
-	target := ensureJSONExtension(s)
-	if _, err := os.Stat(target); err == nil {
-		return errors.New("file already exists")
+	return nil
+}
+
+func validateConfigPath(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return errors.New("path cannot be empty")
 	}
 	return nil
 }

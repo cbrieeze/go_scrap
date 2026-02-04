@@ -28,6 +28,7 @@ Thumbs.db
 
 # Outputs
 output/
+artifacts/
 !internal/output/
 
 # Logs

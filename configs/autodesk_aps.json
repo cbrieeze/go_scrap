@@ -1,7 +1,7 @@
 {
   "mode": "dynamic",
   "url": "https://aps.autodesk.com/en/docs/",
-  "output_dir": "output/autodesk_aps",
+  "output_dir": "artifacts/autodesk_aps",
   "timeout_seconds": 90,
   "wait_for": "main",
   "nav_selector": "nav",

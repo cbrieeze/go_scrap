@@ -36,7 +36,7 @@ This document outlines the future development plans for `go_scrap`. The priority
 ## Phase 3: Content Fidelity & Hardening (Current)\n\n*(library-backed = can be implemented mostly with existing Go packages)*
 
 - [x] **Anchor-only Pages**: Support anchor-only pages by mapping menu anchors to the closest heading.
-- [x] **Asset Downloading**: Add an option to download referenced images locally and rewrite Markdown links to point to the `output/` directory.
+- [x] **Asset Downloading**: Add an option to download referenced images locally and rewrite Markdown links to point to the output directory.
 - [x] **Complex Table Support** (library-backed): Improve the Markdown converter to handle HTML tables with `rowspan` and `colspan` more gracefully. (e.g., `github.com/JohannesKaufmann/html-to-markdown` plugins)
 - [x] **Conversion Hardening** (library-backed): Strengthen HTML-to-Markdown conversions (code blocks, lists, nested elements). (custom rules on `github.com/JohannesKaufmann/html-to-markdown`)
 - [x] **Link Rewriting** (library-backed): Resolve relative links to absolute (or local if downloaded) and preserve `source_url` per section. (built-in `net/url`)

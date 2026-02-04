@@ -74,6 +74,8 @@ type parsedFlags struct {
 	proxyURL           stringFlag
 	authHeaders        stringMapFlag
 	authCookies        stringMapFlag
+	hooks              stringSliceFlag
+	postCommands       stringSliceFlag
 	// Crawl mode flags
 	crawl       bool
 	resume      bool
@@ -93,9 +95,10 @@ func parseFlags(args []string) (parsedFlags, error) {
 	fs.BoolVar(&parsed.dryRun, "dry-run", false, "Fetch and analyze only; do not write outputs")
 	parsed.modeStr.Value = "auto"
 	fs.Var(&parsed.modeStr, "mode", "Fetch mode: auto|static|dynamic")
-	fs.Var(&parsed.outputDir, "output-dir", "Output directory (default: output/<host>)")
-	parsed.timeout.Value = 45
+	fs.Var(&parsed.outputDir, "output-dir", "Output directory (default: artifacts/<host>)")
+	parsed.timeout.Value = app.DefaultTimeoutSeconds
 	fs.Var(&parsed.timeout, "timeout", "Timeout seconds")
+	parsed.userAgent.Value = app.DefaultUserAgent
 	fs.Var(&parsed.userAgent, "user-agent", "User-Agent header")
 	fs.Var(&parsed.waitFor, "wait-for", "CSS selector to wait for (dynamic mode)")
 	parsed.headless.Value = true
@@ -122,6 +125,8 @@ func parseFlags(args []string) (parsedFlags, error) {
 	fs.Var(&parsed.proxyURL, "proxy", "Proxy URL (e.g., http://user:pass@host:port)")
 	fs.Var(&parsed.authHeaders, "auth-header", "Authentication header in key=value form (repeatable)")
 	fs.Var(&parsed.authCookies, "auth-cookie", "Authentication cookie in key=value form (repeatable)")
+	fs.Var(&parsed.hooks, "hook", "Pipeline hook to run (repeatable; built-ins: strict-report, exec)")
+	fs.Var(&parsed.postCommands, "post-cmd", "Command to run after writing outputs (repeatable; used by --hook exec)")
 
 	// Crawl mode flags
 	fs.BoolVar(&parsed.crawl, "crawl", false, "Enable multi-page crawl mode")
@@ -172,6 +177,8 @@ func applyConfigDefaults(parsed *parsedFlags, cfg config.Config) {
 	applyProxy(parsed, cfg)
 	applyAuthHeaders(parsed, cfg)
 	applyAuthCookies(parsed, cfg)
+	applyHooks(parsed, cfg)
+	applyPostCommands(parsed, cfg)
 }
 
 func applyURL(parsed *parsedFlags, cfg config.Config) {
@@ -326,6 +333,20 @@ func applyAuthCookies(parsed *parsedFlags, cfg config.Config) {
 	}
 }
 
+func applyHooks(parsed *parsedFlags, cfg config.Config) {
+	if parsed.hooks.WasSet || len(cfg.PipelineHooks) == 0 {
+		return
+	}
+	parsed.hooks.Values = append([]string(nil), cfg.PipelineHooks...)
+}
+
+func applyPostCommands(parsed *parsedFlags, cfg config.Config) {
+	if parsed.postCommands.WasSet || len(cfg.PostCommands) == 0 {
+		return
+	}
+	parsed.postCommands.Values = append([]string(nil), cfg.PostCommands...)
+}
+
 func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 	// --sitemap implies --crawl
 	crawl := parsed.crawl || parsed.sitemapURL != ""
@@ -362,6 +383,8 @@ func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 		ProxyURL:           parsed.proxyURL.Value,
 		AuthHeaders:        parsed.authHeaders.Values,
 		AuthCookies:        parsed.authCookies.Values,
+		PipelineHooks:      parsed.hooks.Values,
+		PostCommands:       parsed.postCommands.Values,
 		Crawl:              crawl,
 		Resume:             parsed.resume,
 		SitemapURL:         parsed.sitemapURL,

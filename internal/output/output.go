@@ -68,7 +68,7 @@ func WriteAll(doc *parse.Document, rep report.Report, markdown string, opts Writ
 
 func WriteJSON(doc *parse.Document, rep report.Report, opts WriteOptions) (string, error) {
 	if opts.OutputDir == "" {
-		opts.OutputDir = "output"
+		opts.OutputDir = "artifacts"
 	}
 	if opts.JSONFile == "" {
 		opts.JSONFile = "content.json"
@@ -99,7 +99,7 @@ func WriteJSON(doc *parse.Document, rep report.Report, opts WriteOptions) (strin
 
 func WriteMarkdown(outputDir string, filename string, markdown string) (string, error) {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	if filename == "" {
 		filename = "content.md"
@@ -116,7 +116,7 @@ func WriteMarkdown(outputDir string, filename string, markdown string) (string, 
 
 func WriteMarkdownParts(outputDir string, filename string, parts []string, limits ChunkLimits) (string, error) {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	if filename == "" {
 		filename = "content.md"
@@ -158,7 +158,7 @@ func WriteMarkdownParts(outputDir string, filename string, parts []string, limit
 
 func WriteMenu(outputDir string, nodes []menu.Node) error {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -173,7 +173,7 @@ func WriteMenu(outputDir string, nodes []menu.Node) error {
 
 func WriteSectionFiles(outputDir string, nodes []menu.Node, mdByID map[string]string, maxItems int, limits ChunkLimits) error {
 	if outputDir == "" {
-		outputDir = "output"
+		outputDir = "artifacts"
 	}
 	base := filepath.Join(outputDir, "sections")
 	if err := os.MkdirAll(base, 0755); err != nil {

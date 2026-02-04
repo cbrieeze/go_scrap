@@ -15,7 +15,7 @@ import (
 type navPage interface {
 	Locator(string) navLocator
 	Goto(string, playwright.PageGotoOptions) (playwright.Response, error)
-	Evaluate(string, interface{}) (interface{}, error)
+	Evaluate(string, ...interface{}) (interface{}, error)
 	Content() (string, error)
 	SetExtraHTTPHeaders(map[string]string) error
 }
@@ -40,8 +40,8 @@ func (p *playwrightPageAdapter) Goto(url string, opts playwright.PageGotoOptions
 	return p.page.Goto(url, opts)
 }
 
-func (p *playwrightPageAdapter) Evaluate(expr string, arg interface{}) (interface{}, error) {
-	return p.page.Evaluate(expr, arg)
+func (p *playwrightPageAdapter) Evaluate(expr string, args ...interface{}) (interface{}, error) {
+	return p.page.Evaluate(expr, args...)
 }
 
 func (p *playwrightPageAdapter) Content() (string, error) {
@@ -140,7 +140,8 @@ func openPage(opts Options) (navPage, func(), error) {
 		return nil, func() {}, err
 	}
 
-	if err := applyNavHeaders(page, opts); err != nil {
+	adapter := &playwrightPageAdapter{page: page}
+	if err := applyNavHeaders(adapter, opts); err != nil {
 		_ = page.Close()
 		return nil, func() {}, err
 	}
@@ -148,7 +149,7 @@ func openPage(opts Options) (navPage, func(), error) {
 	closeAll := func() {
 		_ = page.Close()
 	}
-	return &playwrightPageAdapter{page: page}, closeAll, nil
+	return adapter, closeAll, nil
 }
 
 var browserManager struct {

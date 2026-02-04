@@ -18,7 +18,7 @@ CLI web scraper in Go that:
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.25.6+
 - Playwright (for dynamic mode)
 
 ## Install dependencies
@@ -81,7 +81,7 @@ Common flags:
 ```bash
 # Fetch & parse
 --mode auto|static|dynamic
---output-dir output/<host>
+--output-dir artifacts/<host>
 --wait-for ".selector"      # dynamic mode
 --headless true|false
 --yes                        # skip confirmation prompt
@@ -112,15 +112,22 @@ Common flags:
 --proxy http://proxy:8080    # proxy URL for requests (static/dynamic/crawl)
 --auth-header "key=value"    # extra request header (repeatable)
 --auth-cookie "key=value"    # extra cookie (repeatable)
---config config.json         # load JSON config
+
+# Post-processing hooks
+--hook strict-report         # fail if completeness checks report issues
+--hook exec                  # run post-commands after outputs are written
+--post-cmd "echo done"       # command to run after write (repeatable)
+--config configs/config.json # load JSON config
 --init-config                # interactive config wizard
 ```
 
-Run directly from `main.go`:
+Run directly from `main.go` (or `./cmd/go_scrap`):
 
 ```bash
 cd go_scrap
 go run main.go --url https://example.com --mode auto
+# equivalent:
+go run ./cmd/go_scrap --url https://example.com --mode auto
 ```
 
 ## Subcommands
@@ -211,7 +218,7 @@ When you set `--max-md-bytes`, `--max-chars`, or `--max-tokens`, the scraper spl
 Example output layout:
 
 ```
-output/<host>/
+artifacts/<host>/
   content.md
   content.json
   menu.json
@@ -227,13 +234,14 @@ output/<host>/
 ## Config schema
 
 Create a JSON file and pass it with `--config`.
+Preferred location: `configs/` (legacy `CONFIGS/`, `.codex/CONFIGS/`, and `.codex/` are also recognized by the TUI/test-configs flow).
 
 ```json
 {
   "url": "https://example.com",
   "mode": "auto|static|dynamic",
-  "output_dir": "output/<host>",
-  "timeout_seconds": 60,
+  "output_dir": "artifacts/<host>",
+  "timeout_seconds": 45,
   "user_agent": "go_scrap/1.0",
   "wait_for": "body",
   "headless": true,
@@ -288,4 +296,16 @@ Create a JSON file and pass it with `--config`.
 - Table conversion uses a dedicated helper to preserve row/column structure.
 - The CLI prints discovered IDs/anchors before asking to continue.
 - Selector failures now include the selector value to speed debugging.
-\n## Docs\n\n- docs/ROADMAP.md\n- docs/CLAUDE.md\n
+## Docs
+
+- `docs/ROADMAP.md`
+- `docs/CLAUDE.md`
+
+## Repo structure
+
+- `main.go` — root entrypoint for `go run .`
+- `cmd/go_scrap/main.go` — alternative binary entrypoint
+- `internal/app/` — scraping pipeline and orchestration
+- `internal/subcommands/` — `inspect` and `test-configs`
+- `configs/` — preferred location for site config files
+- `docs/` — project documentation

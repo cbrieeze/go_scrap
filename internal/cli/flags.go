@@ -94,3 +94,16 @@ func (s *stringMapFlag) Set(v string) error {
 	s.WasSet = true
 	return nil
 }
+
+type stringSliceFlag struct {
+	Values []string
+	WasSet bool
+}
+
+func (s *stringSliceFlag) String() string { return strings.Join(s.Values, ",") }
+
+func (s *stringSliceFlag) Set(v string) error {
+	s.Values = append(s.Values, v)
+	s.WasSet = true
+	return nil
+}

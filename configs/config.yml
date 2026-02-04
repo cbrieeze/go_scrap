@@ -44,7 +44,7 @@ markdown:
 # Output options
 output:
   # Output directory
-  dir: "output"
+  dir: "artifacts"
   # Output format (e.g., markdown, jsonl)
   format: "markdown"
   # Whether to download assets (e.g., images)

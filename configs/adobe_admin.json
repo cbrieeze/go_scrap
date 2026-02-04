@@ -1,7 +1,7 @@
 {
   "mode": "dynamic",
   "url": "https://developer.adobe.com/console/docs/",
-  "output_dir": "output/adobe_admin",
+  "output_dir": "artifacts/adobe_admin",
   "timeout_seconds": 90,
   "wait_for": "main",
   "nav_selector": "nav",

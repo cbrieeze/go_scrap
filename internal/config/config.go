@@ -24,6 +24,9 @@ type Config struct {
 	ProxyURL           string            `json:"proxy_url"`
 	AuthHeaders        map[string]string `json:"auth_headers"`
 	AuthCookies        map[string]string `json:"auth_cookies"`
+	// Post-processing pipeline hooks
+	PipelineHooks []string `json:"pipeline_hooks"`
+	PostCommands  []string `json:"post_commands"`
 	// Crawl mode settings
 	Crawl       bool   `json:"crawl"`
 	Resume      bool   `json:"resume"`

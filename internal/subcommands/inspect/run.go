@@ -1,13 +1,16 @@
-package main
+package inspect
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
+	"go_scrap/internal/app"
 	"go_scrap/internal/fetch"
 
 	"github.com/PuerkitoBio/goquery"
@@ -19,7 +22,7 @@ type candidate struct {
 	Text     int
 }
 
-type inspectOptions struct {
+type options struct {
 	URL           string
 	WaitFor       string
 	TimeoutSec    int
@@ -28,54 +31,57 @@ type inspectOptions struct {
 	Headless      bool
 }
 
-func runInspect(args []string) {
-	opts := parseInspectOptions(args)
+func Run(args []string) error {
+	opts, err := parseOptions(args)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.URL) == "" {
-		fmt.Println("--url is required")
-		return
+		return errors.New("--url is required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(opts.TimeoutSec)*time.Second)
 	defer cancel()
 
-	result, err := loadInspectHTML(ctx, opts)
+	result, err := loadHTML(ctx, opts)
 	if err != nil {
-		fatal(err)
+		return err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(result.HTML))
 	if err != nil {
-		fatal(err)
+		return err
 	}
 
 	if strings.TrimSpace(opts.CheckSelector) != "" {
 		inspectSpecificSelector(doc, opts.CheckSelector)
-		return
+		return nil
 	}
 
 	candidates := collectCandidates(doc)
 	printCandidates(candidates)
 	printTopLinkContainers(doc, 5)
+	return nil
 }
 
-func parseInspectOptions(args []string) inspectOptions {
-	fs := flag.NewFlagSet("inspect", flag.ExitOnError)
-	opts := inspectOptions{}
+func parseOptions(args []string) (options, error) {
+	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 
+	opts := options{}
 	fs.StringVar(&opts.URL, "url", "", "URL to inspect")
 	fs.StringVar(&opts.WaitFor, "wait-for", "body", "CSS selector to wait for")
-	fs.IntVar(&opts.TimeoutSec, "timeout", 45, "Timeout seconds")
+	fs.IntVar(&opts.TimeoutSec, "timeout", app.DefaultTimeoutSeconds, "Timeout seconds")
 	fs.StringVar(&opts.CheckSelector, "check-selector", "", "Specific selector to validate")
 	fs.BoolVar(&opts.UseCache, "cache", false, "Use disk cache for HTML content")
 	fs.BoolVar(&opts.Headless, "headless", true, "Run browser headless")
-
 	if err := fs.Parse(args); err != nil {
-		fatal(err)
+		return options{}, err
 	}
-	return opts
+	return opts, nil
 }
 
-func loadInspectHTML(ctx context.Context, opts inspectOptions) (fetch.Result, error) {
+func loadHTML(ctx context.Context, opts options) (fetch.Result, error) {
 	if opts.UseCache {
 		cachePath := fetch.GetCachePath(opts.URL)
 		if content, err := os.ReadFile(cachePath); err == nil {
@@ -90,6 +96,7 @@ func loadInspectHTML(ctx context.Context, opts inspectOptions) (fetch.Result, er
 		Timeout:         time.Duration(opts.TimeoutSec) * time.Second,
 		WaitForSelector: opts.WaitFor,
 		Headless:        opts.Headless,
+		UserAgent:       app.DefaultUserAgent,
 	})
 	if err != nil {
 		return fetch.Result{}, err

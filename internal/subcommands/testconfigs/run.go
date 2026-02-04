@@ -1,9 +1,10 @@
-package main
+package testconfigs
 
 import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,35 +15,23 @@ import (
 	"go_scrap/internal/fetch"
 )
 
-func runTestConfigs(args []string) {
-	fs := flag.NewFlagSet("test-configs", flag.ExitOnError)
-	var (
-		dir      string
-		maxSec   int
-		maxMenu  int
-		dryRun   bool
-		timeout  int
-		headless bool
-	)
-
-	fs.StringVar(&dir, "dir", "configs", "Directory of config JSON files")
-	fs.IntVar(&maxSec, "max-sections", 3, "Limit number of sections written (0 = all)")
-	fs.IntVar(&maxMenu, "max-menu-items", 5, "Limit number of menu section files written (0 = all)")
-	fs.BoolVar(&dryRun, "dry-run", true, "Dry-run (no files written)")
-	fs.IntVar(&timeout, "timeout", 60, "Timeout seconds")
-	fs.BoolVar(&headless, "headless", true, "Run browser headless")
-	_ = fs.Parse(args)
-
-	files, err := os.ReadDir(dir)
+func Run(args []string) error {
+	dir, maxSec, maxMenu, dryRun, timeout, headless, err := parseOptions(args)
 	if err != nil {
-		fatal(fmt.Errorf("read configs dir: %w", err))
+		return err
+	}
+
+	resolvedDir := resolveDir(dir)
+	files, err := os.ReadDir(resolvedDir)
+	if err != nil {
+		return fmt.Errorf("read configs dir: %w", err)
 	}
 
 	for _, f := range files {
 		if filepath.Ext(f.Name()) != ".json" {
 			continue
 		}
-		path := filepath.Join(dir, f.Name())
+		path := filepath.Join(resolvedDir, f.Name())
 		cfg, err := config.Load(path)
 		if err != nil {
 			fmt.Printf("%s: INVALID (%v)\n", f.Name(), err)
@@ -85,4 +74,34 @@ func runTestConfigs(args []string) {
 			fmt.Printf("OK\n")
 		}
 	}
+
+	return nil
+}
+
+func parseOptions(args []string) (dir string, maxSec int, maxMenu int, dryRun bool, timeout int, headless bool, err error) {
+	fs := flag.NewFlagSet("test-configs", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	fs.StringVar(&dir, "dir", config.DefaultConfigDir, "Directory of config JSON files")
+	fs.IntVar(&maxSec, "max-sections", 3, "Limit number of sections written (0 = all)")
+	fs.IntVar(&maxMenu, "max-menu-items", 5, "Limit number of menu section files written (0 = all)")
+	fs.BoolVar(&dryRun, "dry-run", true, "Dry-run (no files written)")
+	fs.IntVar(&timeout, "timeout", app.DefaultTimeoutSeconds, "Timeout seconds")
+	fs.BoolVar(&headless, "headless", true, "Run browser headless")
+	err = fs.Parse(args)
+	return
+}
+
+func resolveDir(dir string) string {
+	if strings.TrimSpace(dir) != "" {
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	for _, candidate := range config.SearchDirs() {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return dir
 }

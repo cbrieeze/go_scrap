@@ -12,7 +12,7 @@ func TestGetCachePath(t *testing.T) {
 	if path == "" {
 		t.Fatal("expected non-empty cache path")
 	}
-	if filepath.Dir(path) != filepath.Join("output", "cache") {
+	if filepath.Dir(path) != filepath.Join("artifacts", "cache") {
 		t.Fatalf("unexpected cache dir: %s", filepath.Dir(path))
 	}
 	if !strings.HasSuffix(path, ".html") {

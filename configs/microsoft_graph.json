@@ -1,7 +1,7 @@
 {
   "mode": "auto",
   "url": "https://learn.microsoft.com/graph/",
-  "output_dir": "output/microsoft_graph",
+  "output_dir": "artifacts/microsoft_graph",
   "timeout_seconds": 60,
   "nav_selector": "nav[role='navigation']",
   "content_selector": "main",

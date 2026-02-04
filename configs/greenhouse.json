@@ -1,7 +1,7 @@
 {
   "mode": "auto",
   "url": "https://developers.greenhouse.io/",
-  "output_dir": "output/greenhouse",
+  "output_dir": "artifacts/greenhouse",
   "timeout_seconds": 60,
   "nav_selector": "#sidebar, nav",
   "content_selector": ".content, main",

@@ -1,7 +1,7 @@
 {
   "mode": "auto",
   "url": "https://support.bluebeam.com/articles/revu-administration-guide/",
-  "output_dir": "output/bluebeam",
+  "output_dir": "artifacts/bluebeam",
   "timeout_seconds": 60,
   "nav_selector": ".sidebar-nav",
   "content_selector": "article, .post-content",

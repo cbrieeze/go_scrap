@@ -10,7 +10,7 @@ import (
 func GetCachePath(urlStr string) string {
 	h := sha256.Sum256([]byte(urlStr))
 	name := hex.EncodeToString(h[:]) + ".html"
-	return filepath.Join("output", "cache", name)
+	return filepath.Join("artifacts", "cache", name)
 }
 
 func SaveToCache(path string, content string) error {

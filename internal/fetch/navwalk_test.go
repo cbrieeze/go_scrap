@@ -33,7 +33,7 @@ func (f *fakeNavPage) Goto(url string, _ playwright.PageGotoOptions) (playwright
 	return nil, f.gotoErr
 }
 
-func (f *fakeNavPage) Evaluate(_ string, _ interface{}) (interface{}, error) {
+func (f *fakeNavPage) Evaluate(_ string, _ ...interface{}) (interface{}, error) {
 	if len(f.evals) == 0 {
 		return "", nil
 	}
@@ -47,6 +47,10 @@ func (f *fakeNavPage) Content() (string, error) {
 		return "", f.contentErr
 	}
 	return f.content, nil
+}
+
+func (f *fakeNavPage) SetExtraHTTPHeaders(_ map[string]string) error {
+	return nil
 }
 
 type fakeNavLocator struct {

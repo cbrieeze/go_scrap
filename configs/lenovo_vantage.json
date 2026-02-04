@@ -1,7 +1,7 @@
 {
   "mode": "dynamic",
   "url": "https://support.lenovo.com/us/en/solutions/hf003321",
-  "output_dir": "output/lenovo_vantage",
+  "output_dir": "artifacts/lenovo_vantage",
   "timeout_seconds": 60,
   "wait_for": "#content",
   "content_selector": "#content, .article-body",

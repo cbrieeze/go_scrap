@@ -13,7 +13,7 @@ func TestLoadConfig(t *testing.T) {
 	data := []byte(`{
   "url": "https://example.com",
   "mode": "dynamic",
-  "output_dir": "output/test",
+  "output_dir": "artifacts/test",
   "timeout_seconds": 42,
   "user_agent": "test-agent",
   "wait_for": "main",
@@ -43,7 +43,7 @@ func TestLoadConfig(t *testing.T) {
 	expected := config.Config{
 		URL:                "https://example.com",
 		Mode:               "dynamic",
-		OutputDir:          "output/test",
+		OutputDir:          "artifacts/test",
 		TimeoutSeconds:     42,
 		UserAgent:          "test-agent",
 		WaitForSelector:    "main",
@@ -68,7 +68,7 @@ func TestMarshalConfig(t *testing.T) {
 	cfg := config.Config{
 		URL:                "https://example.com",
 		Mode:               "auto",
-		OutputDir:          "output/x",
+		OutputDir:          "artifacts/x",
 		TimeoutSeconds:     10,
 		UserAgent:          "ua",
 		WaitForSelector:    "body",
