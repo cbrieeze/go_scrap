@@ -6,21 +6,24 @@ import (
 )
 
 type Config struct {
-	URL                string  `json:"url"`
-	Mode               string  `json:"mode"`
-	OutputDir          string  `json:"output_dir"`
-	TimeoutSeconds     int     `json:"timeout_seconds"`
-	UserAgent          string  `json:"user_agent"`
-	WaitForSelector    string  `json:"wait_for"`
-	Headless           *bool   `json:"headless"`
-	NavSelector        string  `json:"nav_selector"`
-	ContentSelector    string  `json:"content_selector"`
-	ExcludeSelector    string  `json:"exclude_selector"`
-	NavWalk            bool    `json:"nav_walk"`
-	RateLimitPerSecond float64 `json:"rate_limit_per_second"`
-	MaxMarkdownBytes   int     `json:"max_markdown_bytes"`
-	MaxChars           int     `json:"max_chars"`
-	MaxTokens          int     `json:"max_tokens"`
+	URL                string            `json:"url"`
+	Mode               string            `json:"mode"`
+	OutputDir          string            `json:"output_dir"`
+	TimeoutSeconds     int               `json:"timeout_seconds"`
+	UserAgent          string            `json:"user_agent"`
+	WaitForSelector    string            `json:"wait_for"`
+	Headless           *bool             `json:"headless"`
+	NavSelector        string            `json:"nav_selector"`
+	ContentSelector    string            `json:"content_selector"`
+	ExcludeSelector    string            `json:"exclude_selector"`
+	NavWalk            bool              `json:"nav_walk"`
+	RateLimitPerSecond float64           `json:"rate_limit_per_second"`
+	MaxMarkdownBytes   int               `json:"max_markdown_bytes"`
+	MaxChars           int               `json:"max_chars"`
+	MaxTokens          int               `json:"max_tokens"`
+	ProxyURL           string            `json:"proxy_url"`
+	AuthHeaders        map[string]string `json:"auth_headers"`
+	AuthCookies        map[string]string `json:"auth_cookies"`
 	// Crawl mode settings
 	Crawl       bool   `json:"crawl"`
 	Resume      bool   `json:"resume"`

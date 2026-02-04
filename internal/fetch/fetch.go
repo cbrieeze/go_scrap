@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -26,6 +28,9 @@ type Options struct {
 	WaitForSelector    string
 	Headless           bool
 	RateLimitPerSecond float64
+	ProxyURL           string
+	Headers            map[string]string
+	Cookies            map[string]string
 }
 
 type Result struct {
@@ -88,9 +93,20 @@ func fetchStatic(ctx context.Context, opts Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	req.Header.Set("User-Agent", opts.UserAgent)
+	applyHeaders(req.Header, opts.Headers, opts.Cookies)
 
 	client := &http.Client{Timeout: opts.Timeout}
+	if opts.ProxyURL != "" {
+		proxyURL, err := url.Parse(opts.ProxyURL)
+		if err != nil {
+			return "", fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -107,6 +123,37 @@ func fetchStatic(ctx context.Context, opts Options) (string, error) {
 		return "", err
 	}
 	return string(body), nil
+}
+
+func applyHeaders(headers http.Header, extra map[string]string, cookies map[string]string) {
+	for key, value := range extra {
+		headers.Set(key, value)
+	}
+	cookieHeader := buildCookieHeader(cookies)
+	if cookieHeader == "" {
+		return
+	}
+	if existing := headers.Get("Cookie"); existing != "" {
+		headers.Set("Cookie", existing+"; "+cookieHeader)
+		return
+	}
+	headers.Set("Cookie", cookieHeader)
+}
+
+func buildCookieHeader(cookies map[string]string) string {
+	if len(cookies) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(cookies))
+	for key := range cookies {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, cookies[key]))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func waitForRateLimit(ctx context.Context, ratePerSecond float64) error {

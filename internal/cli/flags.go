@@ -65,3 +65,32 @@ func (b *boolFlag) Set(v string) error {
 }
 
 func (b *boolFlag) IsBoolFlag() bool { return true }
+
+type stringMapFlag struct {
+	Values map[string]string
+	WasSet bool
+}
+
+func (s *stringMapFlag) String() string {
+	if len(s.Values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(s.Values))
+	for key, value := range s.Values {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, value))
+	}
+	return strings.Join(parts, ",")
+}
+
+func (s *stringMapFlag) Set(v string) error {
+	key, value, ok := strings.Cut(v, "=")
+	if !ok || strings.TrimSpace(key) == "" {
+		return fmt.Errorf("expected key=value, got %q", v)
+	}
+	if s.Values == nil {
+		s.Values = make(map[string]string)
+	}
+	s.Values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	s.WasSet = true
+	return nil
+}
