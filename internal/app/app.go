@@ -50,6 +50,7 @@ type Options struct {
 	MaxTokens          int
 	// Crawl mode options
 	Crawl       bool
+	Resume      bool
 	SitemapURL  string
 	MaxPages    int
 	CrawlDepth  int
@@ -216,8 +217,30 @@ func processCrawlResults(ctx context.Context, opts Options, results map[string]*
 	pipeline := newPipeline()
 	pagesDir := filepath.Join(opts.OutputDir, "pages")
 	pageSections := []output.PageSectionCount{}
+	resumeEntries, err := loadResumeEntries(opts)
+	if err != nil {
+		return err
+	}
 
 	for pageURL, result := range results {
+		if resumeEntry, ok := resumeEntries[pageURL]; ok && shouldResumeSkip(opts, result, resumeEntry) {
+			pageDir, dirErr := urlToOutputDir(pageURL, pagesDir)
+			if dirErr == nil {
+				if _, err := os.Stat(pageDir); err == nil {
+					if resumeEntry.Status == "success" {
+						pageSections = append(pageSections, output.PageSectionCount{
+							URL:      pageURL,
+							Sections: resumeEntry.SectionCount,
+						})
+					}
+					if !opts.Stdout {
+						fmt.Printf("Skipped (unchanged): %s\n", pageDir)
+					}
+					continue
+				}
+			}
+		}
+
 		summary := pipeline.processCrawlPage(ctx, opts, pageURL, result, pagesDir)
 		if summary.Processed {
 			pageSections = append(pageSections, output.PageSectionCount{
@@ -245,6 +268,34 @@ func processCrawlResults(ctx context.Context, opts Options, results map[string]*
 	}
 
 	return nil
+}
+
+func loadResumeEntries(opts Options) (map[string]crawler.PageEntry, error) {
+	if !opts.Resume {
+		return nil, nil
+	}
+	index, err := output.ReadCrawlIndex(opts.OutputDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read crawl index: %w", err)
+	}
+	entries := make(map[string]crawler.PageEntry, len(index.Pages))
+	for _, page := range index.Pages {
+		entries[page.URL] = page
+	}
+	return entries, nil
+}
+
+func shouldResumeSkip(opts Options, result *crawler.Result, entry crawler.PageEntry) bool {
+	if !opts.Resume {
+		return false
+	}
+	if result == nil || result.Error != nil || result.ContentHash == "" {
+		return false
+	}
+	return entry.Status == "success" && entry.ContentHash != "" && entry.ContentHash == result.ContentHash
 }
 
 func urlToOutputDir(pageURL, baseDir string) (string, error) {
