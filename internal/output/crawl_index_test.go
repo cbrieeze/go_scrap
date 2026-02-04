@@ -46,3 +46,36 @@ func TestBuildCrawlIndex_UsesSectionCounts(t *testing.T) {
 		t.Fatalf("expected page section count 3, got %#v", index.Pages)
 	}
 }
+
+func TestReadCrawlIndex(t *testing.T) {
+	dir := t.TempDir()
+	index := crawler.CrawlIndex{
+		StartedAt:     time.Now(),
+		CompletedAt:   time.Now(),
+		BaseURL:       "https://example.com",
+		PagesCrawled:  1,
+		PagesFailed:   0,
+		TotalSections: 1,
+		Pages: []crawler.PageEntry{
+			{
+				URL:          "https://example.com",
+				Status:       "success",
+				SectionCount: 1,
+				FetchedAt:    time.Now(),
+				ContentHash:  "hash",
+			},
+		},
+	}
+
+	if err := output.WriteCrawlIndex(dir, index, true); err != nil {
+		t.Fatalf("WriteCrawlIndex error: %v", err)
+	}
+
+	readIndex, err := output.ReadCrawlIndex(dir)
+	if err != nil {
+		t.Fatalf("ReadCrawlIndex error: %v", err)
+	}
+	if len(readIndex.Pages) != 1 || readIndex.Pages[0].ContentHash != "hash" {
+		t.Fatalf("expected content hash to round trip, got %#v", readIndex.Pages)
+	}
+}

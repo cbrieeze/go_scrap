@@ -55,3 +55,19 @@ func WriteCrawlIndex(outputDir string, index crawler.CrawlIndex, silent bool) er
 
 	return nil
 }
+
+func ReadCrawlIndex(outputDir string) (crawler.CrawlIndex, error) {
+	if outputDir == "" {
+		outputDir = "output"
+	}
+	indexPath := filepath.Join(outputDir, "crawl-index.json")
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return crawler.CrawlIndex{}, err
+	}
+	var index crawler.CrawlIndex
+	if err := json.Unmarshal(data, &index); err != nil {
+		return crawler.CrawlIndex{}, err
+	}
+	return index, nil
+}

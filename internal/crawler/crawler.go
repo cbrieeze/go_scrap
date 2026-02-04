@@ -2,6 +2,8 @@ package crawler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -25,10 +27,11 @@ type Options struct {
 }
 
 type Result struct {
-	URL       string
-	HTML      string
-	Error     error
-	FetchedAt time.Time
+	URL         string
+	HTML        string
+	Error       error
+	FetchedAt   time.Time
+	ContentHash string
 }
 
 type Stats struct {
@@ -47,6 +50,7 @@ type PageEntry struct {
 	FetchedAt     time.Time `json:"fetched_at"`
 	Error         string    `json:"error,omitempty"`
 	ContentLength int       `json:"content_length,omitempty"`
+	ContentHash   string    `json:"content_hash,omitempty"`
 }
 
 // CrawlIndex is a comprehensive summary of a crawl operation.
@@ -164,9 +168,10 @@ func (cr *Crawler) handleHTMLResponse(e *colly.HTMLElement) {
 	}
 
 	cr.results[e.Request.URL.String()] = &Result{
-		URL:       e.Request.URL.String(),
-		HTML:      html,
-		FetchedAt: time.Now(),
+		URL:         e.Request.URL.String(),
+		HTML:        html,
+		FetchedAt:   time.Now(),
+		ContentHash: hashHTML(html),
 	}
 	cr.stats.PagesCrawled++
 }
@@ -301,6 +306,7 @@ func BuildIndex(results map[string]*Result, stats Stats, baseURL string, section
 		} else {
 			entry.Status = "success"
 			entry.ContentLength = len(result.HTML)
+			entry.ContentHash = result.ContentHash
 			if count, ok := sectionCounts[url]; ok {
 				entry.SectionCount = count
 				index.TotalSections += count
@@ -314,6 +320,11 @@ func BuildIndex(results map[string]*Result, stats Stats, baseURL string, section
 	sortPageEntries(index.Pages)
 
 	return index
+}
+
+func hashHTML(html string) string {
+	sum := sha256.Sum256([]byte(html))
+	return hex.EncodeToString(sum[:])
 }
 
 func sortPageEntries(pages []PageEntry) {

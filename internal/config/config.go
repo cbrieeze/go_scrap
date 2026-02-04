@@ -23,6 +23,7 @@ type Config struct {
 	MaxTokens          int     `json:"max_tokens"`
 	// Crawl mode settings
 	Crawl       bool   `json:"crawl"`
+	Resume      bool   `json:"resume"`
 	SitemapURL  string `json:"sitemap_url"`
 	MaxPages    int    `json:"max_pages"`
 	CrawlDepth  int    `json:"crawl_depth"`

@@ -101,6 +101,7 @@ Common flags:
 
 # Multi-page crawl mode
 --crawl                      # enable multi-page crawl mode
+--resume                     # skip unchanged pages using crawl-index.json
 --sitemap URL                # crawl from sitemap.xml (enables --crawl)
 --max-pages 100              # maximum pages to crawl (default: 100)
 --crawl-depth 2              # max link depth from start URL (default: 2)
@@ -176,6 +177,8 @@ In crawl mode (`--crawl` or `--sitemap`), outputs are organized per-URL with a s
 - `crawl-index.json` - Summary with per-page section counts and errors
 - `pages/<path>/` - Per-URL directories containing standard outputs
 
+Use `--resume` to skip rewriting pages whose `content_hash` matches the previous crawl index.
+
 The `crawl-index.json` includes:
 ```json
 {
@@ -186,7 +189,7 @@ The `crawl-index.json` includes:
   "pages_failed": 2,
   "total_sections": 156,
   "pages": [
-    { "url": "...", "status": "success", "section_count": 5, "fetched_at": "..." },
+    { "url": "...", "status": "success", "section_count": 5, "fetched_at": "...", "content_hash": "..." },
     { "url": "...", "status": "error", "error": "timeout", "fetched_at": "..." }
   ],
   "errors": ["..."]
@@ -240,6 +243,7 @@ Create a JSON file and pass it with `--config`.
   "max_chars": 20000,
   "max_tokens": 4000,
   "crawl": false,
+  "resume": false,
   "sitemap_url": "",
   "max_pages": 100,
   "crawl_depth": 2,

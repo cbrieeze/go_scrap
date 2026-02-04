@@ -73,6 +73,7 @@ type parsedFlags struct {
 	downloadAssetsFlag bool
 	// Crawl mode flags
 	crawl       bool
+	resume      bool
 	sitemapURL  string
 	maxPages    intFlag
 	crawlDepth  intFlag
@@ -118,6 +119,7 @@ func parseFlags(args []string) (parsedFlags, error) {
 
 	// Crawl mode flags
 	fs.BoolVar(&parsed.crawl, "crawl", false, "Enable multi-page crawl mode")
+	fs.BoolVar(&parsed.resume, "resume", false, "Resume crawl by skipping unchanged pages (uses crawl-index.json)")
 	fs.StringVar(&parsed.sitemapURL, "sitemap", "", "Sitemap URL to crawl (enables crawl mode)")
 	parsed.maxPages.Value = 100
 	fs.Var(&parsed.maxPages, "max-pages", "Maximum pages to crawl (default: 100)")
@@ -156,6 +158,7 @@ func applyConfigDefaults(parsed *parsedFlags, cfg config.Config) {
 	applyMaxChars(parsed, cfg)
 	applyMaxTokens(parsed, cfg)
 	applyCrawl(parsed, cfg)
+	applyResume(parsed, cfg)
 	applySitemap(parsed, cfg)
 	applyMaxPages(parsed, cfg)
 	applyCrawlDepth(parsed, cfg)
@@ -258,6 +261,12 @@ func applyCrawl(parsed *parsedFlags, cfg config.Config) {
 	}
 }
 
+func applyResume(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.resume && cfg.Resume {
+		parsed.resume = true
+	}
+}
+
 func applySitemap(parsed *parsedFlags, cfg config.Config) {
 	if parsed.sitemapURL == "" && cfg.SitemapURL != "" {
 		parsed.sitemapURL = cfg.SitemapURL
@@ -316,6 +325,7 @@ func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 		MaxChars:           parsed.maxChars.Value,
 		MaxTokens:          parsed.maxTokens.Value,
 		Crawl:              crawl,
+		Resume:             parsed.resume,
 		SitemapURL:         parsed.sitemapURL,
 		MaxPages:           parsed.maxPages.Value,
 		CrawlDepth:         parsed.crawlDepth.Value,
