@@ -34,7 +34,7 @@ type fakeRunner struct {
 	stopped   bool
 }
 
-func (r *fakeRunner) ChromiumLaunch(_ bool) (dynamicBrowser, error) {
+func (r *fakeRunner) ChromiumLaunch(_ bool, _ string) (dynamicBrowser, error) {
 	if r.launchErr != nil {
 		return nil, r.launchErr
 	}
@@ -77,6 +77,7 @@ type fakePage struct {
 	waitErr     error
 	contentErr  error
 	content     string
+	headers     map[string]string
 	closed      bool
 	gotoURL     string
 	gotoTimeout time.Duration
@@ -98,6 +99,11 @@ func (p *fakePage) WaitFor(selector string, timeout time.Duration) error {
 
 func (p *fakePage) Content() (string, error) {
 	return p.content, p.contentErr
+}
+
+func (p *fakePage) SetExtraHTTPHeaders(headers map[string]string) error {
+	p.headers = headers
+	return nil
 }
 
 func (p *fakePage) Close() error {
@@ -179,7 +185,13 @@ func TestFetchDynamicWith_Success(t *testing.T) {
 	runner := &fakeRunner{browser: browser}
 	provider := &fakeProvider{runner: runner}
 
-	opts := Options{URL: "https://example.com", Timeout: time.Second, UserAgent: "ua"}
+	opts := Options{
+		URL:       "https://example.com",
+		Timeout:   time.Second,
+		UserAgent: "ua",
+		Headers:   map[string]string{"X-Test": "ok"},
+		Cookies:   map[string]string{"session": "abc"},
+	}
 	html, err := fetchDynamicWith(context.Background(), opts, provider)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -189,6 +201,12 @@ func TestFetchDynamicWith_Success(t *testing.T) {
 	}
 	if browser.userAgent != "ua" {
 		t.Fatalf("expected user agent to be set, got %q", browser.userAgent)
+	}
+	if page.headers["X-Test"] != "ok" {
+		t.Fatalf("expected header to be set, got %v", page.headers)
+	}
+	if !strings.Contains(page.headers["Cookie"], "session=abc") {
+		t.Fatalf("expected cookie header to be set, got %v", page.headers)
 	}
 }
 

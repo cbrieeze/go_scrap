@@ -17,6 +17,7 @@ type navPage interface {
 	Goto(string, playwright.PageGotoOptions) (playwright.Response, error)
 	Evaluate(string, interface{}) (interface{}, error)
 	Content() (string, error)
+	SetExtraHTTPHeaders(map[string]string) error
 }
 
 type navLocator interface {
@@ -45,6 +46,10 @@ func (p *playwrightPageAdapter) Evaluate(expr string, arg interface{}) (interfac
 
 func (p *playwrightPageAdapter) Content() (string, error) {
 	return p.page.Content()
+}
+
+func (p *playwrightPageAdapter) SetExtraHTTPHeaders(headers map[string]string) error {
+	return p.page.SetExtraHTTPHeaders(headers)
 }
 
 type playwrightLocatorAdapter struct {
@@ -135,6 +140,11 @@ func openPage(opts Options) (navPage, func(), error) {
 		return nil, func() {}, err
 	}
 
+	if err := applyNavHeaders(page, opts); err != nil {
+		_ = page.Close()
+		return nil, func() {}, err
+	}
+
 	closeAll := func() {
 		_ = page.Close()
 	}
@@ -163,9 +173,13 @@ func ensureBrowser(opts Options) (playwright.Browser, error) {
 		return nil, err
 	}
 
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+	launchOpts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(opts.Headless),
-	})
+	}
+	if opts.ProxyURL != "" {
+		launchOpts.Proxy = &playwright.Proxy{Server: opts.ProxyURL}
+	}
+	browser, err := pw.Chromium.Launch(launchOpts)
 	if err != nil {
 		_ = pw.Stop()
 		return nil, err
@@ -212,6 +226,25 @@ func fetchAnchorContentWithPage(page navPage, baseURL string, opts Options, anch
 		results[anchor] = html
 	}
 	return results, nil
+}
+
+func applyNavHeaders(page navPage, opts Options) error {
+	headers := map[string]string{}
+	for key, value := range opts.Headers {
+		headers[key] = value
+	}
+	cookieHeader := buildCookieHeader(opts.Cookies)
+	if cookieHeader != "" {
+		if existing, ok := headers["Cookie"]; ok && strings.TrimSpace(existing) != "" {
+			headers["Cookie"] = existing + "; " + cookieHeader
+		} else {
+			headers["Cookie"] = cookieHeader
+		}
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return page.SetExtraHTTPHeaders(headers)
 }
 
 func navigateToAnchor(page navPage, baseURL string, anchor string, opts Options) error {

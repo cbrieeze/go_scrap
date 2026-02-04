@@ -71,6 +71,9 @@ type parsedFlags struct {
 	maxTokens          intFlag
 	useCache           bool
 	downloadAssetsFlag bool
+	proxyURL           stringFlag
+	authHeaders        stringMapFlag
+	authCookies        stringMapFlag
 	// Crawl mode flags
 	crawl       bool
 	sitemapURL  string
@@ -115,6 +118,9 @@ func parseFlags(args []string) (parsedFlags, error) {
 	fs.Var(&parsed.maxTokens, "max-tokens", "Max tokens per section markdown file before splitting (0 = no split)")
 	fs.BoolVar(&parsed.useCache, "cache", false, "Use disk cache for HTML content")
 	fs.BoolVar(&parsed.downloadAssetsFlag, "download-assets", false, "Download referenced images to local assets directory")
+	fs.Var(&parsed.proxyURL, "proxy", "Proxy URL (e.g., http://user:pass@host:port)")
+	fs.Var(&parsed.authHeaders, "auth-header", "Authentication header in key=value form (repeatable)")
+	fs.Var(&parsed.authCookies, "auth-cookie", "Authentication cookie in key=value form (repeatable)")
 
 	// Crawl mode flags
 	fs.BoolVar(&parsed.crawl, "crawl", false, "Enable multi-page crawl mode")
@@ -160,6 +166,9 @@ func applyConfigDefaults(parsed *parsedFlags, cfg config.Config) {
 	applyMaxPages(parsed, cfg)
 	applyCrawlDepth(parsed, cfg)
 	applyCrawlFilter(parsed, cfg)
+	applyProxy(parsed, cfg)
+	applyAuthHeaders(parsed, cfg)
+	applyAuthCookies(parsed, cfg)
 }
 
 func applyURL(parsed *parsedFlags, cfg config.Config) {
@@ -282,6 +291,32 @@ func applyCrawlFilter(parsed *parsedFlags, cfg config.Config) {
 	}
 }
 
+func applyProxy(parsed *parsedFlags, cfg config.Config) {
+	if !parsed.proxyURL.WasSet && cfg.ProxyURL != "" {
+		parsed.proxyURL.Value = cfg.ProxyURL
+	}
+}
+
+func applyAuthHeaders(parsed *parsedFlags, cfg config.Config) {
+	if parsed.authHeaders.WasSet || len(cfg.AuthHeaders) == 0 {
+		return
+	}
+	parsed.authHeaders.Values = map[string]string{}
+	for key, value := range cfg.AuthHeaders {
+		parsed.authHeaders.Values[key] = value
+	}
+}
+
+func applyAuthCookies(parsed *parsedFlags, cfg config.Config) {
+	if parsed.authCookies.WasSet || len(cfg.AuthCookies) == 0 {
+		return
+	}
+	parsed.authCookies.Values = map[string]string{}
+	for key, value := range cfg.AuthCookies {
+		parsed.authCookies.Values[key] = value
+	}
+}
+
 func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 	// --sitemap implies --crawl
 	crawl := parsed.crawl || parsed.sitemapURL != ""
@@ -315,6 +350,9 @@ func buildOptions(parsed parsedFlags) (app.Options, bool, error) {
 		MaxMarkdownBytes:   parsed.maxMarkdownBytes.Value,
 		MaxChars:           parsed.maxChars.Value,
 		MaxTokens:          parsed.maxTokens.Value,
+		ProxyURL:           parsed.proxyURL.Value,
+		AuthHeaders:        parsed.authHeaders.Values,
+		AuthCookies:        parsed.authCookies.Values,
 		Crawl:              crawl,
 		SitemapURL:         parsed.sitemapURL,
 		MaxPages:           parsed.maxPages.Value,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,9 @@ type Options struct {
 	URLFilter       *regexp.Regexp // filter URLs to crawl
 	Timeout         time.Duration
 	AllowAllDomains bool // disable domain restriction (for testing)
+	ProxyURL        string
+	Headers         map[string]string
+	Cookies         map[string]string
 }
 
 type Result struct {
@@ -93,6 +97,9 @@ func New(opts Options) (*Crawler, error) {
 	}
 
 	configureRateLimiting(c, opts)
+	if err := configureProxy(c, opts); err != nil {
+		return nil, err
+	}
 
 	crawler := &Crawler{
 		collector: c,
@@ -147,10 +154,23 @@ func configureRateLimiting(c *colly.Collector, opts Options) {
 	}
 }
 
+func configureProxy(c *colly.Collector, opts Options) error {
+	if opts.ProxyURL == "" {
+		return nil
+	}
+	if err := c.SetProxy(opts.ProxyURL); err != nil {
+		return fmt.Errorf("set proxy: %w", err)
+	}
+	return nil
+}
+
 func (cr *Crawler) setupCallbacks(c *colly.Collector) {
 	c.OnHTML("html", cr.handleHTMLResponse)
 	c.OnHTML("a[href]", cr.handleLink)
 	c.OnError(cr.handleError)
+	c.OnRequest(func(r *colly.Request) {
+		applyRequestHeaders(r, cr.opts.Headers, cr.opts.Cookies)
+	})
 }
 
 func (cr *Crawler) handleHTMLResponse(e *colly.HTMLElement) {
@@ -226,6 +246,37 @@ func isValidLink(link string) bool {
 	return !strings.HasPrefix(link, "#") &&
 		!strings.HasPrefix(link, "javascript:") &&
 		!strings.HasPrefix(link, "mailto:")
+}
+
+func applyRequestHeaders(r *colly.Request, headers map[string]string, cookies map[string]string) {
+	for key, value := range headers {
+		r.Headers.Set(key, value)
+	}
+	cookieHeader := buildCookieHeader(cookies)
+	if cookieHeader == "" {
+		return
+	}
+	if existing := r.Headers.Get("Cookie"); existing != "" {
+		r.Headers.Set("Cookie", existing+"; "+cookieHeader)
+		return
+	}
+	r.Headers.Set("Cookie", cookieHeader)
+}
+
+func buildCookieHeader(cookies map[string]string) string {
+	if len(cookies) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(cookies))
+	for key := range cookies {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, cookies[key]))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (cr *Crawler) Crawl(ctx context.Context) (map[string]*Result, Stats, error) {

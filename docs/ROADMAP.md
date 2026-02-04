@@ -54,7 +54,7 @@ This document outlines the future development plans for `go_scrap`. The priority
   - Depends on: Crawl Engine.
 - [ ] **Resume / Incremental Sync** (library-backed): Update existing outputs based on last-fetch timestamps or content hashes. (e.g., SQLite + hashes)
   - Depends on: stable IDs + output index.
-- [ ] **Advanced Network Config**: Expose `colly` options for Proxies (`--proxy`) and Authentication (headers/cookies).
+- [x] **Advanced Network Config**: Expose `colly` options for Proxies (`--proxy`) and Authentication (headers/cookies).
 - [x] **Crawl Index**: Generate a crawl index file to summarize pages and section counts.
   - Depends on: Crawl Engine.
 

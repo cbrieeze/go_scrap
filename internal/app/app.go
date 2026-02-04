@@ -48,6 +48,9 @@ type Options struct {
 	MaxMarkdownBytes   int
 	MaxChars           int
 	MaxTokens          int
+	ProxyURL           string
+	AuthHeaders        map[string]string
+	AuthCookies        map[string]string
 	// Crawl mode options
 	Crawl       bool
 	SitemapURL  string
@@ -185,6 +188,9 @@ func buildCrawlerOptions(opts Options, baseURL string, urlFilter *regexp.Regexp)
 		MaxPages:    opts.MaxPages,
 		URLFilter:   urlFilter,
 		Timeout:     opts.Timeout,
+		ProxyURL:    opts.ProxyURL,
+		Headers:     opts.AuthHeaders,
+		Cookies:     opts.AuthCookies,
 	}
 	if crawlerOpts.RateLimit <= 0 {
 		crawlerOpts.RateLimit = 1.0
@@ -422,6 +428,9 @@ func fetchResult(ctx context.Context, opts Options) (fetch.Result, error) {
 			WaitForSelector:    opts.WaitFor,
 			Headless:           opts.Headless,
 			RateLimitPerSecond: opts.RateLimitPerSecond,
+			ProxyURL:           opts.ProxyURL,
+			Headers:            opts.AuthHeaders,
+			Cookies:            opts.AuthCookies,
 		})
 		if err == nil || ctx.Err() != nil {
 			break
@@ -455,6 +464,9 @@ func runNavWalk(ctx context.Context, opts Options, baseDoc *goquery.Document) (*
 		WaitForSelector:    opts.WaitFor,
 		Headless:           opts.Headless,
 		RateLimitPerSecond: opts.RateLimitPerSecond,
+		ProxyURL:           opts.ProxyURL,
+		Headers:            opts.AuthHeaders,
+		Cookies:            opts.AuthCookies,
 	}, anchors)
 	if err != nil {
 		if ctx.Err() != nil {

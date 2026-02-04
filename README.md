@@ -108,6 +108,9 @@ Common flags:
 
 # General
 --rate-limit 2.5             # requests per second (0 = off)
+--proxy http://proxy:8080    # proxy URL for requests (static/dynamic/crawl)
+--auth-header "key=value"    # extra request header (repeatable)
+--auth-cookie "key=value"    # extra cookie (repeatable)
 --config config.json         # load JSON config
 --init-config                # interactive config wizard
 ```
@@ -239,6 +242,9 @@ Create a JSON file and pass it with `--config`.
   "max_markdown_bytes": 20000,
   "max_chars": 20000,
   "max_tokens": 4000,
+  "proxy_url": "",
+  "auth_headers": {},
+  "auth_cookies": {},
   "crawl": false,
   "sitemap_url": "",
   "max_pages": 100,

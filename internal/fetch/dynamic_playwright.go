@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/playwright-community/playwright-go"
@@ -15,7 +16,7 @@ type dynamicProvider interface {
 }
 
 type dynamicRunner interface {
-	ChromiumLaunch(headless bool) (dynamicBrowser, error)
+	ChromiumLaunch(headless bool, proxyURL string) (dynamicBrowser, error)
 	Stop() error
 }
 
@@ -28,6 +29,7 @@ type dynamicPage interface {
 	Goto(url string, timeout time.Duration) error
 	WaitFor(selector string, timeout time.Duration) error
 	Content() (string, error)
+	SetExtraHTTPHeaders(headers map[string]string) error
 	Close() error
 }
 
@@ -49,10 +51,14 @@ type playwrightRunner struct {
 	pw *playwright.Playwright
 }
 
-func (r *playwrightRunner) ChromiumLaunch(headless bool) (dynamicBrowser, error) {
-	browser, err := r.pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+func (r *playwrightRunner) ChromiumLaunch(headless bool, proxyURL string) (dynamicBrowser, error) {
+	launchOpts := playwright.BrowserTypeLaunchOptions{
 		Headless: playwright.Bool(headless),
-	})
+	}
+	if proxyURL != "" {
+		launchOpts.Proxy = &playwright.Proxy{Server: proxyURL}
+	}
+	browser, err := r.pw.Chromium.Launch(launchOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +110,10 @@ func (p *playwrightPage) Content() (string, error) {
 	return p.page.Content()
 }
 
+func (p *playwrightPage) SetExtraHTTPHeaders(headers map[string]string) error {
+	return p.page.SetExtraHTTPHeaders(headers)
+}
+
 func (p *playwrightPage) Close() error {
 	return p.page.Close()
 }
@@ -128,7 +138,7 @@ func fetchDynamicWith(ctx context.Context, opts Options, provider dynamicProvide
 		_ = runner.Stop()
 	}()
 
-	browser, err := runner.ChromiumLaunch(opts.Headless)
+	browser, err := runner.ChromiumLaunch(opts.Headless, opts.ProxyURL)
 	if err != nil {
 		return "", err
 	}
@@ -143,6 +153,10 @@ func fetchDynamicWith(ctx context.Context, opts Options, provider dynamicProvide
 	defer func() {
 		_ = page.Close()
 	}()
+
+	if err := applyDynamicHeaders(page, opts); err != nil {
+		return "", err
+	}
 
 	if err := page.Goto(opts.URL, opts.Timeout); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -161,4 +175,23 @@ func fetchDynamicWith(ctx context.Context, opts Options, provider dynamicProvide
 		return "", err
 	}
 	return html, nil
+}
+
+func applyDynamicHeaders(page dynamicPage, opts Options) error {
+	headers := map[string]string{}
+	for key, value := range opts.Headers {
+		headers[key] = value
+	}
+	cookieHeader := buildCookieHeader(opts.Cookies)
+	if cookieHeader != "" {
+		if existing, ok := headers["Cookie"]; ok && strings.TrimSpace(existing) != "" {
+			headers["Cookie"] = existing + "; " + cookieHeader
+		} else {
+			headers["Cookie"] = cookieHeader
+		}
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return page.SetExtraHTTPHeaders(headers)
 }
